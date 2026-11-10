@@ -297,7 +297,8 @@ function addonRoutes(): express.Router {
       ...profile.addons.map((addon) => addonSubtitles(addon, stremioRequest, wanted))
     ]);
     /** SubSource's lists in one language, one per record in order (season, whole series, season 1), fetched side by side. */
-    const subsourceIn = async (language: string) => Promise.all((await moviesJob).map((movie) => getSubtitlesIn(movie.movieId, language, key)));
+    const subsourceIn = async (language: string) =>
+      Promise.all((await moviesJob).map(async (movie) => (await getSubtitlesIn(movie.movieId, language, key)).map((subtitle) => ({ ...subtitle, recordSeason: movie.season ?? undefined }))));
     // Each language's SubSource lookup starts now too, so they run side by side.
     const subsourceJobs = new Map(wanted.map((language) => [language, subsourceIn(language)] as const));
 

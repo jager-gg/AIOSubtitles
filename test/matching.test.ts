@@ -25,6 +25,36 @@ const episodeOf = (season: number, episode: number, absoluteEpisode?: number): S
   absoluteEpisode
 });
 
+describe("a subtitle that names another season", () => {
+  const starfall = (subtitleId: number, episode: string, extra: Partial<SubSourceSubtitle> = {}) =>
+    sub({ subtitleId, releaseInfo: [`The Starfall Season 5 (Original Name, Other Name) Ep ${episode}`], commentary: "FanSubs", ...extra });
+
+  it("isn't taken for the same episode number of the season asked for", () => {
+    // SubSource has this show's season 5 only; season 2's episode 17 is the 33rd of the show.
+    const listed = [starfall(3206201, "17", { recordSeason: 5 }), starfall(3288550, "33", { recordSeason: 5 })];
+    expect(filterAndRankDubtitles(listed, episodeOf(2, 17, 33), { requireDub: false })).toEqual([]);
+    // The name alone is enough, whichever record it was listed under.
+    expect(filterAndRankDubtitles([starfall(3206201, "17")], episodeOf(2, 17, 33), { requireDub: false })).toEqual([]);
+  });
+
+  it("is still taken for its own season, and a name spelling out the episode is taken from any record", () => {
+    expect(filterAndRankDubtitles([starfall(3206201, "17", { recordSeason: 5 })], episodeOf(5, 17, 87), { requireDub: false }).map((s) => s.subtitleId)).toEqual([3206201]);
+    const spelled = sub({ subtitleId: 7, releaseInfo: ["The.Starfall.S02E17.1080p.WEB-DL"], recordSeason: 5 });
+    expect(filterAndRankDubtitles([spelled], episodeOf(2, 17, 33), { requireDub: false }).map((s) => s.subtitleId)).toEqual([7]);
+  });
+
+  it("leaves bare numbers alone when no season is named or the record is the whole show's", () => {
+    const bare = sub({ subtitleId: 8, releaseInfo: ["Iron Lantern - 013 [720p]"], recordSeason: 0 });
+    expect(filterAndRankDubtitles([bare], episodeOf(1, 13), { requireDub: false }).map((s) => s.subtitleId)).toEqual([8]);
+    // Counting across the whole show under a "Season 1" name.
+    const across = sub({ subtitleId: 9, releaseInfo: ["Iron Lantern Season 1 - 113"], recordSeason: 1 });
+    expect(filterAndRankDubtitles([across], episodeOf(3, 11, 113), { requireDub: false }).map((s) => s.subtitleId)).toEqual([9]);
+    // A numbered file with no season in its name, listed under another season's record.
+    const stray = sub({ subtitleId: 10, releaseInfo: ["The Starfall Ep 17"], recordSeason: 5 });
+    expect(filterAndRankDubtitles([stray], episodeOf(2, 17, 33), { requireDub: false })).toEqual([]);
+  });
+});
+
 /** The ids of what ranks, best first. */
 const rankedIds = (subs: SubSourceSubtitle[], request: StremioSubtitleRequest, options?: Parameters<typeof filterAndRankDubtitles>[2]) =>
   filterAndRankDubtitles(subs, request, options).map((s) => s.subtitleId);

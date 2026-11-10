@@ -10,7 +10,8 @@ player -> AIOStreams -> AIOSubtitles -> SubSource, SubDL, OpenSubtitles, other a
 ## Finding subtitles
 
 - Requests use an IMDb id (`tt…:season:episode`) or a Kitsu id (`kitsu:1000:13`). Kitsu ids are mapped to IMDb with the Anime Kitsu addon's metadata.
-- SubSource records are tried in order: the requested season, the whole-series record (season 0), then season 1. Anime is often filed on the whole series.
+- SubSource records are tried in order: the requested season, the whole-series record (season 0), then season 1. Anime is often filed on the whole series. When SubSource has none of those, another season's record is searched, and from it only a subtitle whose name spells out the requested season and episode (`S02E17`) is taken: its plain episode numbers count from its own season.
+- A subtitle whose name gives a season ("Season 5 Ep 17") is for that season only, unless it says season 1 and its number is the episode counted across the whole show.
 - Episodes are matched by `S01E13` markers, packs named like `Ep101-170` (by absolute episode), or a bare number such as `Iron Lantern - 013 [720p]`. Resolutions, years, CRCs and season numbers are ignored. The absolute episode comes from Cinemeta's season sizes.
 - **Dub captions** must be tagged as such: `Dubbed Version`, `Eng Dub`, `English Dub` or `dub version`.
 - **Regular English** is a language of its own (`English Subtitles` in a link's settings; `English` there means the dub captions). It's ranked like any other language, and subtitles tagged as dub captions are left out of it.

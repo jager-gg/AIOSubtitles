@@ -48,6 +48,8 @@ export interface SubSourceSubtitle {
   sealedUrl?: string;
   /** The source already searched for this episode, so the result is for it. */
   episodeTrusted?: boolean;
+  /** The season of the SubSource record it was listed under (0: the whole series). */
+  recordSeason?: number;
 
   // What the uploader wrote: release names and notes are what matching reads.
   releaseInfo?: string[] | null;

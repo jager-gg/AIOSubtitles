@@ -154,6 +154,11 @@ export function subtitleMatchesRequestedEpisode(subtitle: SubSourceSubtitle, req
         (request.absoluteEpisode !== undefined && marker.season <= 1 && marker.episode === request.absoluteEpisode)
     );
   }
+  // Listed under another season's record (SubSource had none for this season, the whole series or
+  // season 1, so that one was searched): only a name that spells out this season and episode, which
+  // the markers above would have shown, can be for it. Its episode numbers count from its own season.
+  if (subtitle.recordSeason !== undefined && subtitle.recordSeason > 1 && subtitle.recordSeason !== request.season) return false;
+
   const range = extractEpisodeRange(text);
   if (range) {
     const wanted = request.absoluteEpisode ?? request.episode;
@@ -168,8 +173,17 @@ export function subtitleMatchesRequestedEpisode(subtitle: SubSourceSubtitle, req
 
   // "Iron Lantern - 013 [720p]": a bare number counts when nothing else marks the episode.
   if (subtitle.files === 1 || !subtitle.files) {
-    const bare = bareNumbers((subtitle.releaseInfo ?? []).join(" "));
-    if (bare.length > 0) return bare.includes(request.absoluteEpisode ?? request.episode) || bare.includes(request.episode);
+    const name = (subtitle.releaseInfo ?? []).join(" ");
+    const bare = bareNumbers(name);
+    if (bare.length > 0) {
+      // "The Starfall Season 5 Ep 17" is the 17th episode of season 5: for season 2 it's another
+      // episode (it was served for S2E17). A name that says season 1 may still be
+      // counting across the whole show ("Season 1 - 113").
+      const named = extractSeasonMarkers(name);
+      const acrossShow = named.includes(1) && request.absoluteEpisode !== undefined && bare.includes(request.absoluteEpisode);
+      if (named.length > 0 && !named.includes(request.season) && !acrossShow) return false;
+      return bare.includes(request.absoluteEpisode ?? request.episode) || bare.includes(request.episode);
+    }
   }
 
   // Only a season is named: it has to be this one.
