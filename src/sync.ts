@@ -537,58 +537,66 @@ export function measureWindow(embedded: Cue[], captions: Cue[], range = 20000): 
 }
 
 /**
- * Settles each window on one shift. The consensus is the shift most windows
- * support, counting each window's near-best fits too (a chance match can
- * beat the true fit inside one window, but rarely in several at the same
- * shift). Each window then takes its fit closest to that, and a window that
- * still disagrees with every other one by more than 1.5 s is dropped. A real
- * change in timing (an inserted recap, a moved break) shows in every window
- * after it, so it survives.
+ * Settles each window on one of its fits (its best, or a near-best one), by following the timing
+ * through the file. A chance match can beat the true fit inside one window, but the true timing
+ * carries on from one window to the next, and a real change (an inserted recap, a moved break)
+ * holds in every window after it. So the windows are walked in order and the run of fits is taken
+ * that scores highest in total, where changing the shift between one window and the next costs
+ * STEP_COST and a window may be passed over. A fit off on its own costs two changes, more than one
+ * window can score, so it is passed over; a new timing that lasts is followed.
+ *
+ * This replaced taking the one shift most windows support and pulling every window towards it:
+ * on an episode whose shift changes four times (Night Patrol S01E06, Dutch:
+ * -2.2, -4.5, -7.0, -9.6 and -12.1 s) that read minutes 13 to 25 at the first shift, 2.3 to 4.8 s
+ * late, though most of those windows' own best fits were right.
+ *
+ * A window that still disagrees with every other one by more than 1.5 s is dropped: a change seen
+ * in one window only isn't trusted until another window confirms it.
  */
 export function agreeAnchors(windows: Array<{ from: number; to: number; measured: Measured }>): Anchor[] {
   if (windows.length === 0) return [];
-  const fits = windows.map((w) => [{ offset: w.measured.offset, score: w.measured.score }, ...w.measured.alternatives]);
-  // A shift's support: each window's best fit within 300 ms of it, added up. A film has over a
-  // hundred windows with many fits each, and most fits share a shift, so each window's fits are
-  // sorted once and a shift's support is worked out once.
-  const byOffset = fits.map((options) => [...options].sort((a, b) => a.offset - b.offset));
-  const supports = new Map<number, number>();
-  const supportOf = (offset: number): number => {
-    const known = supports.get(offset);
-    if (known !== undefined) return known;
-    let sum = 0;
-    for (const options of byOffset) {
-      let lo = 0;
-      let hi = options.length;
-      while (lo < hi) {
-        const mid = (lo + hi) >> 1;
-        if (options[mid].offset < offset - 300) lo = mid + 1;
-        else hi = mid;
-      }
-      let best = 0;
-      for (let k = lo; k < options.length && options[k].offset <= offset + 300; k++) if (options[k].score > best) best = options[k].score;
-      sum += best;
-    }
-    supports.set(offset, sum);
-    return sum;
-  };
-  let consensus = windows[0].measured.offset;
-  let bestSupport = -1;
-  for (const candidate of fits.flat()) {
-    const support = supportOf(candidate.offset);
-    if (support > bestSupport) {
-      bestSupport = support;
-      consensus = candidate.offset;
-    }
+  const sorted = [...windows].sort((a, b) => a.from - b.from);
+  const fits = sorted.map((w) => [{ offset: w.measured.offset, score: w.measured.score }, ...w.measured.alternatives]);
+  // Each state is a run ending at one shift: the best total for it, and how it was reached.
+  type State = { offset: number | undefined; total: number; prev: number; pick: number };
+  const steps: State[][] = [];
+  let states: State[] = [{ offset: undefined, total: 0, prev: -1, pick: -1 }];
+  for (const options of fits) {
+    const next = new Map<number | undefined, State>();
+    const keep = (state: State) => {
+      const known = next.get(state.offset);
+      if (!known || state.total > known.total) next.set(state.offset, state);
+    };
+    // Passing this window over: every run carries on as it is.
+    states.forEach((state, j) => keep({ offset: state.offset, total: state.total, prev: j, pick: -1 }));
+    options.forEach((option, k) => {
+      let best: State | undefined;
+      states.forEach((state, j) => {
+        const changed = state.offset !== undefined && Math.abs(option.offset - state.offset) > AGREE_MS;
+        const total = state.total + option.score - (changed ? STEP_COST : 0);
+        if (!best || total > best.total) best = { offset: option.offset, total, prev: j, pick: k };
+      });
+      if (best) keep(best);
+    });
+    steps.push(states);
+    states = [...next.values()].sort((a, b) => b.total - a.total).slice(0, MAX_RUNS);
   }
-  const chosen = windows.map((w, i) => {
-    const options = fits[i];
-    const pick = options.reduce((a, b) => (Math.abs(b.offset - consensus) < Math.abs(a.offset - consensus) ? b : a));
-    return { from: w.from, to: w.to, offset: pick.offset, score: pick.score };
-  });
+  // Back from the best run's end to its start.
+  const picks = new Array<number>(fits.length).fill(-1);
+  let state = states[0];
+  for (let i = fits.length - 1; i >= 0; i--) {
+    picks[i] = state.pick;
+    state = steps[i][state.prev];
+  }
+  const chosen = sorted.flatMap((w, i) => (picks[i] < 0 ? [] : [{ from: w.from, to: w.to, offset: fits[i][picks[i]].offset, score: fits[i][picks[i]].score }]));
   if (chosen.length < 3) return chosen;
   return chosen.filter((anchor, i) => chosen.some((o, j) => j !== i && Math.abs(o.offset - anchor.offset) <= 1500));
 }
+
+/** What a change of shift between two windows costs, in window scores (a window scores 0.45 to 1). */
+const STEP_COST = 0.6;
+/** How many runs are followed at once. */
+const MAX_RUNS = 64;
 
 /**
  * Turns the anchors into a shift per caption line. Anchors that agree (within
@@ -1757,7 +1765,7 @@ export function firstPassSync(key: string): SyncResult | undefined {
 }
 
 /** Bumped when the sync method changes: older results are ignored and download URLs change, so no cache keeps old timing. */
-export const SYNC_VERSION = 8;
+export const SYNC_VERSION = 9;
 
 /**
  * Whether captions belong to the file at all: at least half of the measured

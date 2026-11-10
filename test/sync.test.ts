@@ -103,6 +103,39 @@ describe("anchor sync", () => {
     ).toEqual([400, 320, 320, 160]);
   });
 
+  it("follows a shift that changes several times, instead of pulling windows to the commonest one", () => {
+    const w = (minute: number, offset: number, alternatives: Array<{ offset: number; score: number }> = [], score = 0.9) => ({
+      from: minute * 60000, to: (minute + 1) * 60000, measured: { offset, score, alternatives }
+    });
+    // Night Patrol S01E06, Dutch, on the FraMeSToR release: the subtitle was cut for other
+    // breaks, so its shift steps from -2.2 s to -4.5, -7.0, -9.6 and -12.1 s. The first shift fits
+    // the most windows and is a near-best fit in several later ones.
+    const windows = [
+      ...[0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12].map((m) => w(m, -2200)),
+      w(8, 11080, [{ offset: -2160, score: 0.85 }]),
+      w(13, -4560, [{ offset: -2200, score: 0.84 }]),
+      w(15, -4500), w(16, -4500), w(17, -4640),
+      w(19, 7720, [{ offset: -4800, score: 0.86 }, { offset: -2240, score: 0.85 }]),
+      w(20, 18720, [{ offset: -4300, score: 0.85 }, { offset: -2240, score: 0.84 }]),
+      w(23, -4800, [{ offset: -2240, score: 0.83 }]),
+      w(24, -7000, [{ offset: -4720, score: 0.82 }]),
+      w(25, -6960, [{ offset: -3080, score: 0.82 }]),
+      w(26, -7200), w(27, -7100), w(28, -7200),
+      w(29, -9600), w(30, -9500), w(31, -9800),
+      w(33, 19840, [{ offset: -9480, score: 0.85 }]),
+      w(34, -12100), w(35, -12100), w(36, -12200)
+    ];
+    const settled = new Map(agreeAnchors(windows).map((a) => [a.from / 60000, a.offset]));
+    expect([8, 13, 17, 19, 20, 23, 24, 25, 33].map((m) => settled.get(m))).toEqual([-2160, -4560, -4640, -4800, -4300, -4800, -7000, -6960, -9480]);
+    expect(settled.size).toBe(windows.length);
+    // One window off on its own, between windows that agree, is passed over.
+    expect(agreeAnchors([w(0, -2200), w(1, -2200), w(2, 9000), w(3, -2200), w(4, -2200)]).map((a) => a.offset)).toEqual([-2200, -2200, -2200, -2200]);
+    // A change seen in the last window only isn't trusted yet.
+    expect(agreeAnchors([w(0, -2200), w(1, -2200), w(2, -2200), w(3, -7000)]).map((a) => a.offset)).toEqual([-2200, -2200, -2200]);
+    // Windows may come in any order.
+    expect(agreeAnchors([w(3, -4500), w(0, -2200), w(2, -4500), w(1, -2200)]).map((a) => a.offset)).toEqual([-2200, -2200, -4500, -4500]);
+  });
+
   it("uses one shift when anchors agree", () => {
     const shift = planShifts(
       [
