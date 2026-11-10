@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.env
+.cache/
+*.log
+
+# Logo drafts
+assets/aiosubtitles-icon*
+
+# Design notes
+.impeccable/
+PRODUCT.md
+
+# Replay check data (file names of what was played)
+.replay/

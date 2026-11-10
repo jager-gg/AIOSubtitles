@@ -1,0 +1,16 @@
+node_modules
+dist
+.cache
+.cache-*
+.replay
+.impeccable
+.wrangler
+.git
+.env
+.dev.vars
+*.log
+cache
+data
+# Logo drafts (kept in the repo, not shipped)
+assets/aiosubtitles-icon*
+assets/*.prompt.md

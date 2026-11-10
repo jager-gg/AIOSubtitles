@@ -1,0 +1,33 @@
+# AIOSubtitles, self-hosted. Copy this to docker-compose.yml and .env.example to .env, fill in .env,
+# then: docker compose up -d --build   (the tests run during the build)
+services:
+  aiosubtitles:
+    build: .
+    image: aiosubtitles:local
+    container_name: aiosubtitles
+    restart: unless-stopped
+    env_file:
+      - .env
+    # Reach it at http://<this machine>:7000. Behind a reverse proxy on the same Docker network,
+    # drop `ports` and join the proxy's network instead (see `networks` below).
+    ports:
+      - "7000:7000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    volumes:
+      # Cache and edited links. Back it up with CONFIG_SECRET: links edited on their configure page live here.
+      - aiosubtitles-cache:/app/cache
+#   To reach your own AIOStreams by container name (AIOSTREAMS_BASE=http://aiostreams:3000),
+#   put both on one network:
+#   networks:
+#     - aiostreams
+#
+# networks:
+#   aiostreams:
+#     external: true   # the network your AIOStreams container is on
+
+volumes:
+  aiosubtitles-cache:
