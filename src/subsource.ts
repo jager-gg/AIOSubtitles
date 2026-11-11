@@ -11,6 +11,9 @@ import type { StremioSubtitleRequest, SubSourceMovie, SubSourceSubtitle } from "
 const API = "https://api.subsource.net/api/v1";
 /** Subtitles per page when listing a record (SubSource's maximum). */
 const PAGE_SIZE = 50;
+/** Longest a search or a download may take before it is given up, as for every other source. */
+export const SEARCH_TIMEOUT_MS = 10000;
+export const DOWNLOAD_TIMEOUT_MS = 15000;
 
 /** SubSource's reply: the data, plus page counts on lists. */
 interface Reply<T> {
@@ -29,7 +32,7 @@ async function apiGet<T>(apiKey: string, pathname: string, query: Record<string,
   const url = new URL(API + pathname);
   for (const [name, value] of Object.entries(query)) if (value !== undefined) url.searchParams.set(name, String(value));
   count("api.subsource");
-  const response = await fetch(url, { headers: { "X-API-Key": requireKey(apiKey), Accept: "application/json" } });
+  const response = await fetch(url, { headers: { "X-API-Key": requireKey(apiKey), Accept: "application/json" }, signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS) });
   noteKeyCall("subsource", apiKey, response);
   if (!response.ok) {
     count("api.subsource.fail");
@@ -107,8 +110,8 @@ export async function absoluteEpisode(imdbId: string, season: number, episode: n
 const ENGLISH_SPEAKING = new Set(["united states", "united kingdom", "canada", "australia", "ireland", "new zealand"]);
 
 /**
- * Whether a title was made in English, from its country in Cinemeta's catalog: true for The
- * Analyst (United States), false for Dr. Ember (Japan), undefined when unknown. Cached a day.
+ * Whether a title was made in English, from its country in Cinemeta's catalog: true when
+ * the first country listed is an English-speaking one, false for any other, undefined when unknown. Cached a day.
  */
 export async function madeInEnglish(type: string, imdbId: string): Promise<boolean | undefined> {
   const key = cacheKey({ kind: "made-in", imdbId });
@@ -147,7 +150,7 @@ export function getSubtitlesIn(movieId: number, language: string, apiKey: string
 /** The subtitle's download as SubSource sends it: usually a zip, sometimes a lone file. */
 export async function downloadSubtitleArchive(subtitleId: number, apiKey: string): Promise<Buffer> {
   count("api.subsource");
-  const response = await fetch(`${API}/subtitles/${subtitleId}/download`, { headers: { "X-API-Key": requireKey(apiKey) } });
+  const response = await fetch(`${API}/subtitles/${subtitleId}/download`, { headers: { "X-API-Key": requireKey(apiKey) }, signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
   noteKeyCall("subsource", apiKey, response, true);
   if (!response.ok) throw new Error(`SubSource ${response.status} downloading subtitle ${subtitleId}: ${await response.text()}`);
   return Buffer.from(await response.arrayBuffer());

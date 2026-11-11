@@ -85,7 +85,7 @@ describe("usage and health", () => {
       stats.noteKeyCall("subdl", "secret-subdl-key", ok);
       stats.noteKeyCall("subdl", "secret-subdl-key", ok, true);
     });
-    stats.noteActivity({ link: "9999aaaa/cd34ef", kind: "download", what: "Arabic · Dr. Ember S2 - 01", result: "synced", ms: 1200 });
+    stats.noteActivity({ link: "9999aaaa/cd34ef", kind: "download", what: "Arabic · Show S2 - 01", result: "synced", ms: 1200 });
     const view = await stats.statsView("1.3.0");
     const id = stats.keyId("subsource", "secret-subsource-key");
     expect(id).toMatch(/^subsource:[0-9a-f]{6}$/);
@@ -99,7 +99,7 @@ describe("usage and health", () => {
     expect(html).toContain("/50"); // SubDL's downloads
     expect(html).toMatch(/Resets<span class="km-note"> in [^<]+<\/span><\/span><span class="km-val"><b>\d\d:00<\/b>/); // SubDL's day, on the dashboard's clock
     expect(html).toContain("Refused 1×");
-    expect(html).toContain("Dr. Ember S2 - 01");
+    expect(html).toContain("Show S2 - 01");
   });
 
   it("names a link by the name given on the configure page", async () => {
@@ -136,5 +136,24 @@ describe("the stats page", () => {
     expect(manifest.logo).toBe("https://sync.example/logo.png");
     expect(manifest.description).toMatch(/SubDL, OpenSubtitles and any subtitle addon/);
     expect((await fetch(`${base}/logo.png`)).headers.get("content-type")).toBe("image/png");
+  });
+});
+
+describe("the dashboard's sources", () => {
+  it("lists Subtitle Cat once a link has used it, with its errors by name", async () => {
+    expect(page.statsPage(await stats.statsView("1.3.0"))).not.toContain('<th scope="row">Subtitle Cat</th>');
+    stats.count("api.subtitlecat", 4);
+    stats.count("fetch.subtitlecat", 1);
+    stats.noteError("subtitlecat", new Error("search failed: HTTP 503"));
+    const html = page.statsPage(await stats.statsView("1.3.0"));
+    expect(html).toContain('<th scope="row">Subtitle Cat</th><td>4</td><td>1</td><td class="bad">1</td>');
+    expect(html).toContain('<span class="err-where">Subtitle Cat</span>');
+  });
+
+  it("describes the status-in-name setting as it looks", async () => {
+    const token = profile.sealSettings({ opensubtitles: true, languages: ["English", "Arabic"], allowMachine: false, hearingImpaired: "include", statusInName: true });
+    profile.noteLinkToken("4444dddd/ee33ff", token);
+    stats.count("lists", 1, "4444dddd/ee33ff");
+    expect(page.statsPage(await stats.statsView("1.3.0"))).toContain("Status in the track name, like Arabic (Synced)");
   });
 });

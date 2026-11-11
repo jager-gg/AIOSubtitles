@@ -43,12 +43,15 @@ export function fileLooksLikeSubtitle(filename: string): boolean {
   return /\.(srt|ass|ssa|vtt|sub)$/i.test(filename);
 }
 
-/** Season and episode written together: "S01E05", "s1 e5", "E05 S01", "1x05". */
+/**
+ * Season and episode written together: "S01E05", "s1 e5", "E05 S01", "1x05", "S01E005". A number
+ * ends where its digits do, so episode 3 isn't "S01E30" and season 1 isn't "S10".
+ */
 export function episodeMarkerMatches(value: string, season?: number, episode?: number): boolean {
   if (!season || !episode) return false;
-  const s = `0?${season}`;
-  const e = `0?${episode}`;
-  const forms = [`s\\s*${s}\\D{0,4}e\\s*${e}`, `e\\s*${e}\\D{0,4}s\\s*${s}`, `\\b${season}x0?${episode}\\b`];
+  const s = `0*${season}(?!\\d)`;
+  const e = `0*${episode}(?!\\d)`;
+  const forms = [`s\\s*${s}\\D{0,4}e\\s*${e}`, `e\\s*${e}\\D{0,4}s\\s*${s}`, `\\b${season}x0*${episode}\\b`];
   return forms.some((form) => new RegExp(form, "i").test(value));
 }
 
@@ -136,7 +139,7 @@ export function bareNumbers(value: string): number[] {
 export function subtitleMatchesRequestedEpisode(subtitle: SubSourceSubtitle, request: StremioSubtitleRequest): boolean {
   if (request.type !== "series" || !request.season || !request.episode) return true;
   if (subtitle.episodeTrusted) {
-    // The source searched for this episode, but its match can be loose ("Iron Lantern - 113" for E13):
+    // The source searched for this episode, but its match can be loose ("Show - 113" for E13):
     // trust it unless the release name itself names a different episode.
     const name = (subtitle.releaseInfo ?? []).join(" ");
     const wanted = [request.episode, request.absoluteEpisode].filter((n): n is number => n !== undefined);
@@ -171,12 +174,12 @@ export function subtitleMatchesRequestedEpisode(subtitle: SubSourceSubtitle, req
     return request.episode <= Number(count[1]);
   }
 
-  // "Iron Lantern - 013 [720p]": a bare number counts when nothing else marks the episode.
+  // "Show - 013 [720p]": a bare number counts when nothing else marks the episode.
   if (subtitle.files === 1 || !subtitle.files) {
     const name = (subtitle.releaseInfo ?? []).join(" ");
     const bare = bareNumbers(name);
     if (bare.length > 0) {
-      // "The Starfall Season 5 Ep 17" is the 17th episode of season 5: for season 2 it's another
+      // "Show Season 5 Ep 17" is the 17th episode of season 5: for season 2 it's another
       // episode (it was served for S2E17). A name that says season 1 may still be
       // counting across the whole show ("Season 1 - 113").
       const named = extractSeasonMarkers(name);
@@ -199,7 +202,7 @@ const VIDEO_EXT = /\.(mkv|mp4|avi|m4v|webm|ts|srt|ass|ssa|vtt|sub|zip)$/i;
 /** Words that end scene names after a hyphen but are tags, not groups ("WEB-DL", "x264-…"). */
 const NOT_GROUP = /^(dl|rip|web|webdl|x26[45]|h26[45]|hevc|avc|aac|ddp?|dts|\d+p|\d+|v\d)$/i;
 
-/** The release group: "[SubsPlease] Show - 13 (1080p)" or "Show.S01E13.1080p.CR.WEB-DL-VARYG.mkv". */
+/** The release group: "[SubsPlease] Show - 13 (1080p)" or "Show.S01E13.1080p.CR.WEB-DL-TEAM.mkv". */
 export function releaseGroup(name: string): string | undefined {
   const stem = name.trim().replace(VIDEO_EXT, "");
   const lead = stem.match(/^\[([^\]]{2,30})\]/);
@@ -287,6 +290,11 @@ export function filterAndRankDubtitles(
         (bareNumbers((subtitle.releaseInfo ?? []).join(" ")).includes(request.absoluteEpisode) &&
           !bareNumbers((subtitle.releaseInfo ?? []).join(" ")).includes(request.episode ?? -1)));
 
+    // From a source that searched for this episode, a name giving season 1 (or 0) and this episode's
+    // number is taken: an anime sequel is often released as its own "S01". But it may also be the
+    // first season's episode filed under this one, so a name that spells out this season wins over it.
+    const otherSeason = subtitle.episodeTrusted === true && request.type === "series" && (request.season ?? 0) > 1 && namesOnlyAnotherSeason((subtitle.releaseInfo ?? []).join(" "), request);
+
     if (hearingImpaired === "exclude" && subtitle.hearingImpaired === true) return [];
     if (hearingImpaired === "only" && subtitle.hearingImpaired !== true) return [];
     const tier = qualityTier(subtitle);
@@ -298,6 +306,7 @@ export function filterAndRankDubtitles(
         ...subtitle,
         quality,
         ...(tier === -1 ? { machine: true } : {}),
+        ...(otherSeason ? { otherSeason: true } : {}),
         dubtitleScore: phrase === 2 ? 2 : 1,
         releaseMatch: releaseMatch(subtitle, request.filename),
         episodeExact:
@@ -311,10 +320,21 @@ export function filterAndRankDubtitles(
   return fitting.sort(compareRanked);
 }
 
+/**
+ * Whether a name's season and episode markers all give another season than the one asked for, and
+ * none of them is the episode counted across the show ("S01E113" for season 3's 13th is that count).
+ */
+export function namesOnlyAnotherSeason(name: string, request: StremioSubtitleRequest): boolean {
+  const markers = extractEpisodeMarkers(name);
+  const counted = request.absoluteEpisode !== undefined && request.absoluteEpisode !== request.episode ? request.absoluteEpisode : undefined;
+  return markers.length > 0 && !markers.some((m) => m.season === request.season || (counted !== undefined && m.episode === counted));
+}
+
 /** What decides between two fitting subtitles, most important first. Higher is better for each. */
 const RANKING: Array<(subtitle: RankedSubtitle) => number> = [
   (s) => s.dubtitleScore, // the dub tag
   (s) => Number(!s.machine), // a person's (or unknown) before a machine's, when machine translations are allowed
+  (s) => Number(!s.otherSeason), // a name with this season before one that only gives another (see filterAndRankDubtitles)
   (s) => s.quality ?? 1, // translation quality
   (s) => s.releaseMatch ?? 0, // fit to the playing release
   (s) => Number(s.episodeExact), // names this exact episode

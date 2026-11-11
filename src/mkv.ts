@@ -194,7 +194,7 @@ export function parseIndex(buf: Uint8Array, scaleNs: number, subtitleTracks: Set
 /**
  * The dialogue among a track's index lines. The index has timing but no text, so signs and karaoke
  * can't be told apart by style the way a read window's lines are. They give themselves away by shape:
- * karaoke and animated signs are runs of very short events stacked on each other (on a LanternGuild
+ * karaoke and animated signs are runs of very short events stacked on each other (on one Blu-ray
  * episode, 2,478 of 2,841 entries, all in the opening and ending), dialogue lines are longer and stand
  * alone or beside one other line. Every dialogue line the window method read on that file passed this.
  */
@@ -217,8 +217,8 @@ const MIN_DIALOGUE_MS = 300;
  * another starts a moment (about 0.2 s) after the previous one was cleared: an entry within
  * CLEAR_GAP_MS of the one before is surely a show, and that one a clear. Between two sure labels,
  * shows and clears alternate; a stretch whose count doesn't fit (a line replaced without a clear) is
- * left out rather than guessed. Each show lasts until its clear. On iAHD's Iron Lantern 013 and
- * FraMeSToR's Tempo, this found every line the window method read (57 and 28), with their lengths
+ * left out rather than guessed. Each show lasts until its clear. On an episode and a film
+ * checked, this found every line the window method read (57 and 28), with their lengths
  * to the millisecond, and both synced within 0.08 s of the window method.
  */
 export function pictureLines(entries: Array<{ start: number }>): Array<{ start: number; end: number }> {

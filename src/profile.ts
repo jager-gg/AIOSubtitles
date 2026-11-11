@@ -122,7 +122,9 @@ export function settingsProblem(s: Settings): string | undefined {
   if (addons.some((a) => typeof a?.name !== "string" || a.name.length > 60 || typeof a.url !== "string" || a.url.length > 2048 || !/^https:\/\/\S+\/manifest\.json$/.test(a.url))) {
     return "Other addons: each must be an https manifest URL ending in /manifest.json";
   }
-  if (!s.subsource && !s.subdl && !s.opensubtitles && addons.length === 0) return "Sources: add a SubSource or SubDL key, turn on OpenSubtitles, or add an addon";
+  if (!s.subsource && !s.subdl && !s.opensubtitles && addons.length === 0) {
+    return `Sources: ${s.subtitlecat ? "Subtitle Cat needs another source beside it. " : ""}Add a SubSource or SubDL key, turn on OpenSubtitles, or add an addon`;
+  }
   if (s.aiostreams && !parseAiostreamsUrl(s.aiostreams)) {
     return "AIOStreams install URL: must end in /manifest.json and come from a supported AIOStreams instance";
   }

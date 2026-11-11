@@ -47,3 +47,13 @@ describe("a synced subtitle whose file was cleaned up", () => {
     expect(caption).toHaveBeenCalled();
   });
 });
+
+describe("the key a synced result is kept under", () => {
+  it("is what it always was, so nothing synced before is made again", async () => {
+    const { cacheKey } = await import("../src/cache.js");
+    const expected = (subtitleId: string | number) => cacheKey({ kind: "synced", subtitleId, season: 1, episode: 13, filename: "Some.File.mkv", version: sync.SYNC_VERSION });
+    expect(sync.syncKey("ss123", 1, 13, "Some.File.mkv")).toBe(expected("ss123"));
+    expect(sync.syncKey("osar-456", 1, 13, "Some.File.mkv")).toBe(expected("osar-456"));
+    expect(sync.syncKey(123, 1, 13, "Some.File.mkv")).toBe(expected(123));
+  });
+});

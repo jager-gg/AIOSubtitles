@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { accessRoutes, checkLimit, requireRole, sessionRoles } from "./access.js";
 import { config } from "./config.js";
-import { getCachedSubtitleFile, knownMissing } from "./downloads.js";
+import { getCachedSubtitleFile, isDownloaded, knownMissing } from "./downloads.js";
 import { compareRanked, filterAndRankDubtitles } from "./matching.js";
 import { addonSubtitles, openSubtitles, refOf, subdlSubtitles } from "./sources.js";
 import type { SourceKeys } from "./downloads.js";
@@ -19,8 +19,8 @@ import { decodeSubtitle } from "./text.js";
 import { toSrt } from "./srt.js";
 import { tierName, type QualityTier } from "./quality.js";
 import type { RankedSubtitle } from "./types.js";
-import { embeddedLanguages, fileHasSubtitles, fileName, fileRef, firstPassSync, knownSync, SYNC_VERSION, syncCaptions, syncKey } from "./sync.js";
-import { activityPage, clearErrors, undoClearErrors, count, linkNames, noteActivity, noteError, noteLinkKeys, noteLinkLabel, requestContext, statsView } from "./stats.js";
+import { embeddedLanguages, fileHasSubtitles, fileName, fileRef, firstPassSync, knownSync, SYNC_VERSION, syncCaptions, syncKey, type SyncResult } from "./sync.js";
+import { activityPage, clearErrors, undoClearErrors, count, downloadsToday, linkNames, noteActivity, noteError, noteLinkKeys, noteLinkLabel, requestContext, scrub, statsView } from "./stats.js";
 import { activityRows, pageRange, statsPage } from "./statsPage.js";
 import { parseExtraArgs, parseStremioSubtitleRequest } from "./stremio.js";
 
@@ -78,16 +78,27 @@ function downloadUrl(
 
 /**
  * How long a download waits for its sync. Players give up on a subtitle that takes longer than about
- * 10 s and show nothing (Tempo 2014, a 2160p remux read the slow way: 12 s, no text). The whole
- * download stays inside DOWNLOAD_BUDGET_MS; past it, a stand-in is sent and the next request gets the
- * finished sync.
+ * 10 s and show nothing (a 2160p remux read the slow way: 12 s, and no text). The whole
+ * download, fetching the subtitle and trying fallbacks included, stays inside DOWNLOAD_BUDGET_MS from
+ * the moment it is asked for; past it, a stand-in is sent and the next request gets the finished sync.
  */
 const SYNC_WAIT_MS = 5000;
 const DOWNLOAD_BUDGET_MS = 8000;
 /** Fallback candidates kept per other-language track, tried in order when its own subtitle can't be synced. */
 const ALTERNATES = 4;
-/** Longest a download spends trying fallbacks, on top of its own sync. */
-const FALLBACK_MS = 15000;
+/**
+ * Dub caption tracks listed at most. Uploads of one show's dub captions are often the same text, and
+ * the ones not listed still stand behind the listed ones as fallbacks. English CC lists one.
+ */
+const DUB_TRACKS = 3;
+/**
+ * SubDL allows a key 50 downloads a UTC day. Work a list starts (pre-syncing, opening packs, trying
+ * fallbacks) may be for an episode nobody plays (AIOMetadata asks ahead for the next one), so once a
+ * key is down to its last SUBDL_SPARE downloads, a list fetches nothing new from SubDL: those are kept
+ * for subtitles a player asks for. Already downloaded ones cost nothing and are used as before.
+ */
+const SUBDL_DAILY_DOWNLOADS = 50;
+const SUBDL_SPARE = 10;
 /** How long a subtitle list may take: AIOStreams waits 7 s for an addon and then drops all of it. */
 const LIST_BUDGET_MS = 4000;
 /** Extra time the first-play header check may take past that, still well inside 7 s. */
@@ -100,9 +111,10 @@ const SYNC_SLOW_MS = 2500;
  * audio: "synced" when the track was timed by speech in the audio; "trying" when the file has no
  * subtitle track and the audio sync hasn't finished yet, so it may still come as it is.
  */
-export function trackLabel(code: string | undefined, synced: boolean, audio?: "synced" | "trying"): string {
+export function trackLabel(code: string | undefined, synced: boolean, audio?: "synced" | "trying", cc = false): string {
   const how = !synced ? undefined : audio === "synced" ? "Synced by audio" : audio === "trying" ? "Trying audio sync" : "Synced";
-  return [code ? undefined : "English Dub", how, "AIOSubtitles"].filter(Boolean).join(" · ");
+  // The player shows the language beside the label, so the label doesn't repeat "English".
+  return [code ? undefined : cc ? "CC" : "Dub", how, "AIOSubtitles"].filter(Boolean).join(" · ");
 }
 
 /** "ara" or "Arabic" -> "Arabic (Synced)". */
@@ -130,11 +142,30 @@ export function audioLabel(code: string, audio: "synced" | "trying" = "synced"):
 }
 
 /**
+ * "English Dub" -> "English Dub (Synced)", for links that put the status in the track's name: a
+ * player that shows only the name (and not the label) would otherwise show no status for the dub
+ * captions or English CC, while every other language says "(Synced)". Unsynced, the name stays.
+ */
+export function withStatus(name: string, synced: boolean, audio?: "synced" | "trying"): string {
+  if (!synced) return name;
+  return `${name} (${audio === "synced" ? "Synced by audio" : audio === "trying" ? "Trying audio sync" : "Synced"})`;
+}
+
+/**
  * "Arabic" -> "Arabic · AIOSubtitles": a track that isn't synced (sync off, or this file couldn't be
  * matched) still says whose it is, instead of a plain "Arabic" like any other addon's.
  */
 export function unsyncedLabel(code: string): string {
   return `${languageTitle(code)} · AIOSubtitles`;
+}
+
+/**
+ * Whether a sync result is good enough to serve or list as synced: anchors found, and not timed by
+ * speech alone unless the file has no subtitle track (then speech is all there is, and no alternate
+ * can do better). Every place that weighs a subtitle against its fallbacks asks this one question.
+ */
+export function syncedWell(result: SyncResult | undefined | "late" | "wait"): result is SyncResult {
+  return typeof result === "object" && result.anchors.length > 0 && (!result.bySpeech || result.speechOnly === true);
 }
 
 /** A route parameter as one string (Express can hand over an array). */
@@ -241,10 +272,38 @@ function addonRoutes(): express.Router {
     count("lists", 1, profile.name);
     const extra = parseExtraArgs(param(req.params.extra));
     const stremioRequest = parseStremioSubtitleRequest(param(req.params.type), param(req.params.id), extra);
+
+    // Answer within LIST_BUDGET_MS: AIOStreams gives an addon 7 s and drops all of it after that,
+    // and a site seeing an episode for the first time can take longer (OpenSubtitles V3+: 6 to 9 s).
+    // Every lookup starts at once and is waited on by itself: whatever isn't back by the deadline is
+    // left out of this answer but keeps going, so its results are cached for the next request, and
+    // the sources that did answer are listed. A lookup that fails counts as one that found nothing.
+    // A partial answer is cached briefly, so the next request gets the full list.
+    const deadline = Date.now() + LIST_BUDGET_MS;
+    let partial = false;
+    const inTime = <T,>(work: Promise<T>, fallback: T): Promise<T> => {
+      const late = new Promise<"late">((resolve) => setTimeout(() => resolve("late"), Math.max(0, deadline - Date.now())).unref());
+      // A rejection never reaches the list. Sources log their own failures; anything else that throws
+      // (a full disk under the cache, say) is logged here, so a source left out is never left out silently.
+      const settled = work.then(
+        (value) => ({ value }),
+        (error: unknown) => {
+          console.error(`${who} subtitles: a lookup failed, left out of the list: ${scrub(error instanceof Error ? error.message : String(error))}`);
+          return { value: fallback };
+        }
+      );
+      return Promise.race([settled, late]).then((r) => {
+        if (r !== "late") return r.value;
+        partial = true;
+        return fallback;
+      });
+    };
+
     if (!stremioRequest.imdbId) {
       // Kitsu ids (AIOStreams' Jellyfin server sends them for anime) are mapped to IMDb season/episode.
       // The original id stays as stremioRequest.id, which AIOStreams understands for the sync lookup.
-      const mapped = await kitsuToImdb(stremioRequest.id);
+      // A first look-up can take up to 16 s; it goes on after the deadline and is cached for the next ask.
+      const mapped = await inTime(kitsuToImdb(stremioRequest.id), undefined);
       if (mapped) {
         stremioRequest.imdbId = mapped.imdbId;
         stremioRequest.season = mapped.season;
@@ -253,60 +312,69 @@ function addonRoutes(): express.Router {
     }
     if (!stremioRequest.imdbId) {
       // Without an IMDb id the episode can't be placed; a title search would return every pack.
-      console.log(`${who} subtitles ${stremioRequest.id}: no IMDb id for it, skipped`);
-      res.json({ subtitles: [], cacheMaxAge: 300 });
+      console.log(`${who} subtitles ${stremioRequest.id}: ${partial ? "its IMDb id isn't known yet (looking it up)" : "no IMDb id for it, skipped"}`);
+      const age = partial ? 30 : 300;
+      res.set("Cache-Control", `max-age=${age}`);
+      res.json({ subtitles: [], cacheMaxAge: age });
       return;
+    }
+    // The playing file's header (whether it has a subtitle track, and which languages it already has
+    // full subtitles in) is read from now on, beside the searches, not after them: on a file nobody
+    // has played yet it can take 4 to 6 s, and the list can't wait for it past deadline + grace. A
+    // first list answered before it knows lists the file's own languages too.
+    if (profile.aiostreamsUrl && stremioRequest.filename) {
+      void fileHasSubtitles(profile.aiostreamsUrl, stremioRequest.id, stremioRequest.type, fileRef(stremioRequest.filename, stremioRequest.videoSize), 0).catch(() => undefined);
     }
     const key = profile.subsourceKey;
     const keys = keysOf(profile);
     const what = describe(stremioRequest.filename, stremioRequest.id, stremioRequest.season, stremioRequest.episode);
     res.locals.activity = { kind: "list", what, result: "error" };
 
-    // Answer within LIST_BUDGET_MS: AIOStreams gives an addon 7 s and drops all of it after that,
-    // and a site seeing an episode for the first time can take longer (OpenSubtitles V3+: 6 to 9 s).
-    // Every lookup starts at once; whatever isn't back by the deadline is left out of this answer
-    // but keeps going, so its results are cached for the next request. A partial answer is cached
-    // briefly, so the next request gets the full list.
-    const deadline = Date.now() + LIST_BUDGET_MS;
-    let partial = false;
-    const inTime = <T,>(work: Promise<T>, fallback: T): Promise<T> => {
-      const late = new Promise<"late">((resolve) => setTimeout(() => resolve("late"), Math.max(0, deadline - Date.now())).unref());
-      work.catch(() => undefined); // a source failing after the deadline is already logged by it
-      return Promise.race([work, late]).then((r) => {
-        if (r !== "late") return r as T;
-        partial = true;
-        return fallback;
-      });
-    };
-
     const wanted = [...new Set([...(profile.dub ? ["english"] : []), ...profile.extraLanguages.map((l) => l.name)])];
     // Regular English (REGULAR_ENGLISH): translated from the original audio. Dub captions follow the dub.
     const regularEnglish = profile.extraLanguages.some((l) => l.name === "english");
     const absolute =
       stremioRequest.imdbId && stremioRequest.season && stremioRequest.episode
-        ? absoluteEpisode(stremioRequest.imdbId, stremioRequest.season, stremioRequest.episode)
+        ? inTime(absoluteEpisode(stremioRequest.imdbId, stremioRequest.season, stremioRequest.episode), undefined)
         : Promise.resolve(undefined);
-    const moviesJob = key ? findCandidateMovies(stremioRequest, key) : Promise.resolve([]);
-    // Made in English (The Analyst): there's no dub to caption, so the best English subtitle is the
+    // SubSource refusing (a key it no longer accepts, too many calls, an outage) leaves SubSource out of
+    // this list, noted once for the dashboard; the other sources are still listed.
+    let subsourceNoted = false;
+    const subsourceFailed = (error: unknown): never[] => {
+      if (!subsourceNoted) {
+        subsourceNoted = true;
+        noteError("subsource", error);
+        console.error(`subsource: search failed: ${error instanceof Error ? error.message.slice(0, 200) : error}`);
+      }
+      return [];
+    };
+    const moviesJob = key ? findCandidateMovies(stremioRequest, key).catch(subsourceFailed) : Promise.resolve([]);
+    // Made in English: there's no dub to caption, so the best English subtitle is the
     // one. Anime (Kitsu ids too) and other foreign titles, or unknown: dub captions come first.
-    const englishJob =
-      profile.dub && stremioRequest.imdbId && !stremioRequest.id.startsWith("kitsu") ? madeInEnglish(stremioRequest.type, stremioRequest.imdbId) : Promise.resolve(false);
-    // The other sources are asked once for every language this person wants.
+    const englishJob = inTime<boolean | undefined>(
+      profile.dub && stremioRequest.imdbId && !stremioRequest.id.startsWith("kitsu") ? madeInEnglish(stremioRequest.type, stremioRequest.imdbId) : Promise.resolve(false),
+      undefined
+    );
+    // The other sources are asked once for every language this person wants, each waited on by itself.
     const othersJob = Promise.all([
-      profile.subdlKey ? subdlSubtitles(profile.subdlKey, stremioRequest, wanted) : Promise.resolve([]),
-      profile.opensubtitles ? openSubtitles(stremioRequest, wanted, profile.allowMachine) : Promise.resolve([]),
-      profile.subtitlecat ? subtitleCatSubtitles(stremioRequest, wanted) : Promise.resolve([]),
-      ...profile.addons.map((addon) => addonSubtitles(addon, stremioRequest, wanted))
+      inTime(profile.subdlKey ? subdlSubtitles(profile.subdlKey, stremioRequest, wanted) : Promise.resolve([]), []),
+      inTime(profile.opensubtitles ? openSubtitles(stremioRequest, wanted, profile.allowMachine) : Promise.resolve([]), []),
+      inTime(profile.subtitlecat ? subtitleCatSubtitles(stremioRequest, wanted) : Promise.resolve([]), []),
+      ...profile.addons.map((addon) => inTime(addonSubtitles(addon, stremioRequest, wanted), []))
     ]);
     /** SubSource's lists in one language, one per record in order (season, whole series, season 1), fetched side by side. */
     const subsourceIn = async (language: string) =>
-      Promise.all((await moviesJob).map(async (movie) => (await getSubtitlesIn(movie.movieId, language, key)).map((subtitle) => ({ ...subtitle, recordSeason: movie.season ?? undefined }))));
+      Promise.all(
+        (await moviesJob).map(async (movie) =>
+          (await getSubtitlesIn(movie.movieId, language, key).catch(subsourceFailed)).map((subtitle) => ({ ...subtitle, recordSeason: movie.season ?? undefined }))
+        )
+      );
     // Each language's SubSource lookup starts now too, so they run side by side.
     const subsourceJobs = new Map(wanted.map((language) => [language, subsourceIn(language)] as const));
 
-    stremioRequest.absoluteEpisode = await inTime(absolute, undefined);
+    stremioRequest.absoluteEpisode = await absolute;
     const movies = await inTime(moviesJob, []);
-    const [subdl, opensubs, fromCat, ...fromAddons] = await inTime(othersJob, [[], [], [], ...profile.addons.map(() => [])]);
+    const [subdl, opensubs, fromCat, ...fromAddons] = await othersJob;
     const others = (language: string) => [...subdl, ...opensubs, ...fromCat, ...fromAddons.flat()].filter((sub) => sub.language === language);
 
     type RankOptions = Parameters<typeof filterAndRankDubtitles>[2];
@@ -331,19 +399,32 @@ function addonRoutes(): express.Router {
         return found.filter((s) => !dubTagged.has(refOf(s)));
       })
     );
-    const englishOriginal = (await inTime(englishJob, undefined)) === true;
-    let ranked: RankedSubtitle[] = profile.dub && !englishOriginal ? await pool("english", { allowMachine: profile.allowMachine }) : [];
+    const place = (subtitle: RankedSubtitle) =>
+      subtitle.absoluteNumbered && stremioRequest.absoluteEpisode
+        ? [1, stremioRequest.absoluteEpisode]
+        : [stremioRequest.season, stremioRequest.episode];
+    /** Leaves out packs already opened and found not to hold this episode (a "season pack" holding only episode 1). */
+    const notKnownMissing = async (subtitles: RankedSubtitle[]) => {
+      const missing = await Promise.all(subtitles.map((s) => knownMissing(refOf(s), place(s)[0], place(s)[1])));
+      return subtitles.filter((_, i) => !missing[i]);
+    };
+    const englishOriginal = (await englishJob) === true;
+    // Dub captions known not to be in their pack don't count, so the English CC and regular English
+    // fallbacks below get their turn instead of the episode listing nothing.
+    let ranked: RankedSubtitle[] = profile.dub && !englishOriginal ? await notKnownMissing(await pool("english", { allowMachine: profile.allowMachine })) : [];
 
     // No dub captions tagged as such: fall back to an official English hearing-impaired track
     // (Netflix and the like), whose "English (CC)" usually transcribes the dub. Marked "English CC".
+    // One is listed; the other official ones stand behind it as its fallbacks.
     let closedCaptions = false;
     if (profile.dub && !englishOriginal && ranked.length === 0) {
-      const cc = (await pool("english", { requireDub: false, allowMachine: false, hearingImpaired: "only" })).filter((sub) => sub.quality === 3);
+      const cc = (await notKnownMissing(await pool("english", { requireDub: false, allowMachine: false, hearingImpaired: "only" }))).filter((sub) => sub.quality === 3);
       if (cc.length > 0) {
-        ranked = cc.slice(0, 1);
+        ranked = cc;
         closedCaptions = true;
       }
     }
+    const dubListed = ranked.slice(0, closedCaptions ? 1 : DUB_TRACKS);
 
     // Other languages: the best subtitle for the episode in each, from any source.
     // Each also keeps its next two candidates: when the best one can't be synced to the file (seen:
@@ -360,7 +441,7 @@ function addonRoutes(): express.Router {
     // fallback for the rest (no dub captions, no official CC). Shown as plain English, synced like the
     // other languages, never as dub captions.
     if (profile.dub && ranked.length === 0 && !regularEnglish) {
-      const plain = await pool("english", { requireDub: false, allowMachine: profile.allowMachine, hearingImpaired: profile.hearingImpaired });
+      const plain = await notKnownMissing(await pool("english", { requireDub: false, allowMachine: profile.allowMachine, hearingImpaired: profile.hearingImpaired }));
       if (plain[0]) extras.unshift({ subtitle: plain[0], lang: "English", alts: plain.slice(1).filter((s) => !s.sealedUrl).slice(0, ALTERNATES) });
     }
 
@@ -375,26 +456,42 @@ function addonRoutes(): express.Router {
       return;
     }
 
-    count("tracks", ranked.length + extras.length);
+    count("tracks", dubListed.length + extras.length);
     const baseUrl = publicBase(req);
     const playing: PlayingFile | undefined =
       profile.aiostreamsUrl && stremioRequest.filename && stremioRequest.imdbId
         ? { videoId: stremioRequest.id, type: stremioRequest.type, filename: fileRef(stremioRequest.filename, stremioRequest.videoSize) }
         : undefined;
-    const place = (subtitle: RankedSubtitle) =>
-      subtitle.absoluteNumbered && stremioRequest.absoluteEpisode
-        ? [1, stremioRequest.absoluteEpisode]
-        : [stremioRequest.season, stremioRequest.episode];
+    /** Whether work this list starts may fetch this subtitle now (see SUBDL_SPARE). */
+    const listMayFetch = async (subtitle: RankedSubtitle): Promise<boolean> => {
+      if (!refOf(subtitle).startsWith("sd") || !profile.subdlKey) return true;
+      if (downloadsToday("subdl", profile.subdlKey) < SUBDL_DAILY_DOWNLOADS - SUBDL_SPARE) return true;
+      if (await isDownloaded(refOf(subtitle))) return true;
+      count("tracks.subdlSpared");
+      return false;
+    };
+    /** Starts the sync of one subtitle to the playing file, or joins the one running. */
+    const syncOne = (subtitle: RankedSubtitle, season: number | undefined, episode: number | undefined, code: string | undefined): Promise<SyncResult | undefined> =>
+      playing && profile.aiostreamsUrl
+        ? syncCaptions(
+            syncKey(refOf(subtitle), season, episode, playing.filename),
+            () => getCachedSubtitleFile(refOf(subtitle), season, episode, { ...keys, addonUrl: subtitle.sealedUrl ? openUrl(subtitle.sealedUrl) : undefined }),
+            profile.aiostreamsUrl,
+            playing.videoId,
+            playing.type,
+            playing.filename,
+            code
+          ).catch(() => undefined)
+        : Promise.resolve(undefined);
     const placed = [
-      // Each dub track falls back on the ones listed after it: two uploads often carry the same dub
-      // captions, one of them off by a second or so and harder to fit (seen: Herbalist Notes S1E1).
-      ...ranked.map((subtitle, index) => ({
+      // Each dub track falls back on the ones after it, listed or not: two uploads often carry the same
+      // dub captions, one of them off by a second or so and harder to fit.
+      ...dubListed.map((subtitle, index) => ({
         subtitle,
         lang: closedCaptions ? "English CC" : dubLabel(profile),
         code: undefined as string | undefined,
         cc: closedCaptions,
-        sync: index < 3,
-        alts: index < 3 ? ranked.slice(index + 1).filter((s) => !s.sealedUrl).slice(0, ALTERNATES) : []
+        alts: ranked.slice(index + 1).filter((s) => !s.sealedUrl).slice(0, ALTERNATES)
       })),
       // Synced ones get a label of their own ("Arabic (Synced)") so they stand apart from other
       // addons' plain "Arabic"; a player's language preference won't pick them by itself then.
@@ -403,7 +500,6 @@ function addonRoutes(): express.Router {
         lang: playing ? syncedLabel(lang) : unsyncedLabel(lang),
         code: lang as string | undefined,
         cc: false,
-        sync: true,
         alts
       }))
     ].map((track) => {
@@ -426,8 +522,8 @@ function addonRoutes(): express.Router {
       }
       if (current) tracks.push(current);
     }
-    // A pack is only known to hold the episode once it is opened (Crown of Frost: two packs whose
-    // files each cover nine episodes were listed, and the player got an empty track). With a file
+    // A pack is only known to hold the episode once it is opened (seen: two packs whose files each
+    // cover nine episodes were listed, and the player got an empty track). With a file
     // playing the sync opens it anyway, so each is opened from here on, beside the header read, and
     // asked about further down.
     const opening = new Map<string, Promise<boolean>>();
@@ -437,9 +533,14 @@ function addonRoutes(): express.Router {
       const id = `${refOf(subtitle)}|${s}|${e}`;
       let job = opening.get(id);
       if (!job) {
-        job = getCachedSubtitleFile(refOf(subtitle), s, e, { ...keys, addonUrl: subtitle.sealedUrl ? openUrl(subtitle.sealedUrl) : undefined }).then(
-          () => true,
-          (error) => !(error instanceof Error && error.name === "EpisodeNotInPack")
+        // A pack this list may not fetch now is listed as it is, as one not opened in time would be.
+        job = listMayFetch(subtitle).then((may) =>
+          !may
+            ? true
+            : getCachedSubtitleFile(refOf(subtitle), s, e, { ...keys, addonUrl: subtitle.sealedUrl ? openUrl(subtitle.sealedUrl) : undefined }).then(
+                () => true,
+                (error) => !(error instanceof Error && error.name === "EpisodeNotInPack")
+              )
         );
         opening.set(id, job);
       }
@@ -450,7 +551,7 @@ function addonRoutes(): express.Router {
     // The file has no embedded subtitles (from its header, read now on a first play, waited on
     // for at most 4 s), or this subtitle matched none of them before: those tracks don't claim
     // "Synced" and skip the sync work.
-    const fileHas = playing && profile.aiostreamsUrl && tracks.some((t) => t.sync)
+    const fileHas = playing && profile.aiostreamsUrl && tracks.length > 0
       ? await fileHasSubtitles(profile.aiostreamsUrl, playing.videoId, playing.type, playing.filename, Math.min(4000, Math.max(0, deadline + HEADER_GRACE_MS - Date.now())))
       : undefined;
     // The file's own full subtitles are timed to it already: those languages are left out, unless the
@@ -471,6 +572,14 @@ function addonRoutes(): express.Router {
         }
       }
     }
+    // A file timed by its own subtitle track syncs in a second or two once its header is read: the
+    // list waits for that, up to its own deadline, so the first list already says which tracks
+    // synced and can list a fallback in place of one that doesn't. Timing by speech takes 9 to 17 s
+    // and isn't waited for (those tracks say "Trying audio sync").
+    if (playing && fileHas === true && Date.now() < deadline) {
+      const jobs = tracks.map((t) => listMayFetch(t.subtitle).then((may) => (may ? syncOne(t.subtitle, t.season, t.episode, t.code) : undefined)).catch(() => undefined));
+      await Promise.race([Promise.all(jobs), new Promise<void>((resolve) => setTimeout(resolve, Math.max(0, deadline - Date.now())).unref())]);
+    }
     if (playing) {
       for (const track of tracks) {
         if (!track.alts.length) continue;
@@ -479,8 +588,8 @@ function addonRoutes(): express.Router {
         // file's subtitles is better.
         if (own !== "wrong" && own !== "unsynced" && own !== "speech") continue;
         // A file with no subtitle track: speech is all there is. Timed by it, the top one stays; not
-        // timed, an alternate that speech does time takes its place (Crown of Frost S01E06: the top
-        // English couldn't be timed, the third in line was, to +0.06 s, and was never sent).
+        // timed, an alternate that speech does time takes its place (seen: the top English couldn't be
+        // timed, the third in line was, to +0.06 s, and was never sent).
         const speechOnly = fileHas === "speech";
         if (speechOnly && own === "speech") continue;
         // The top one is known not to sync: take a fallback that is known to, or try them now. The
@@ -489,10 +598,10 @@ function addonRoutes(): express.Router {
           const [s, e] = place(alt);
           const key = syncKey(refOf(alt), s, e, playing.filename);
           let state = await knownSync(key, playing.filename);
-          if (state === "unknown" && profile.aiostreamsUrl && Date.now() < deadline + HEADER_GRACE_MS) {
-            const job = syncCaptions(key, () => getCachedSubtitleFile(refOf(alt), s, e, keys), profile.aiostreamsUrl, playing.videoId, playing.type, playing.filename, track.code).catch(() => undefined);
+          if (state === "unknown" && profile.aiostreamsUrl && Date.now() < deadline + HEADER_GRACE_MS && (await listMayFetch(alt))) {
+            const job = syncOne(alt, s, e, track.code);
             const result = await Promise.race([job, new Promise<"late">((resolve) => setTimeout(() => resolve("late"), Math.max(0, deadline + HEADER_GRACE_MS - Date.now())).unref())]);
-            if (result !== "late" && result && result.anchors.length > 0 && (!result.bySpeech || (speechOnly && result.speechOnly))) state = "synced";
+            if (syncedWell(result)) state = "synced";
           }
           if (state !== "synced" && !(speechOnly && state === "speech")) continue;
           track.alts = track.alts.filter((a) => a !== alt);
@@ -541,10 +650,10 @@ function addonRoutes(): express.Router {
         const key = syncKey(refOf(track.subtitle), track.season, track.episode, playing.filename);
         let state = await knownSync(key, playing.filename);
         if (state === "unknown") {
-          const job = syncCaptions(key, () => getCachedSubtitleFile(refOf(track.subtitle), track.season, track.episode, keys), profile.aiostreamsUrl, playing.videoId, playing.type, playing.filename, track.code).catch(() => undefined);
+          const job = syncOne(track.subtitle, track.season, track.episode, track.code);
           const result = await Promise.race([job, new Promise<"late">((resolve) => setTimeout(() => resolve("late"), Math.max(0, deadline + HEADER_GRACE_MS - Date.now())).unref())]);
           // Timed by speech counts only on a file with no subtitle track, where speech is all there is.
-          if (result !== "late" && result && result.anchors.length > 0 && (!result.bySpeech || result.speechOnly)) state = "synced";
+          if (syncedWell(result)) state = "synced";
         }
         fits = state === "synced" || (state === "speech" && fileHas === "speech");
       }
@@ -569,7 +678,7 @@ function addonRoutes(): express.Router {
     }
     const known = await Promise.all(
       tracks.map((t) =>
-        playing && t.sync
+        playing
           ? fileHas === false
             ? "unsynced"
             : knownSync(syncKey(refOf(t.subtitle), t.season, t.episode, playing.filename), playing.filename)
@@ -578,15 +687,15 @@ function addonRoutes(): express.Router {
     );
     const unsynced = new Set(tracks.filter((_, i) => known[i] === "unsynced").map((t) => t.subtitle));
     // Captions that couldn't be fitted to this file stay listed, unsynced: timing alone can't tell
-    // another episode from the same one cut differently (Dr. Ember: Crunchyroll's Arabic sits about
-    // 20 s off the English, all for S2E01). Only the pack check, which reads episode names, removes.
+    // another episode from the same one cut differently (seen: one service's Arabic sits about 20 s
+    // off its English, both for the same episode). Only the pack check, which reads episode names, removes.
     for (let i = 0; i < tracks.length; i++) if (known[i] === "wrong") unsynced.add(tracks[i].subtitle);
     const synced = (t: (typeof tracks)[number]) => Boolean(playing) && !unsynced.has(t.subtitle);
     // Timed by speech in the audio (the file has no subtitle track, or nothing else fit): labelled
     // apart, so it's easy to spot and report.
     const audioOf = new Map<RankedSubtitle, "synced" | "trying">();
     tracks.forEach((t, i) => {
-      if (!t.sync || !synced(t)) return;
+      if (!synced(t)) return;
       if (known[i] === "speech") audioOf.set(t.subtitle, "synced");
       else if (fileHas === "speech" && known[i] === "unknown") audioOf.set(t.subtitle, "trying");
     });
@@ -594,49 +703,34 @@ function addonRoutes(): express.Router {
       const audio = audioOf.get(track.subtitle);
       if (track.code && playing && !synced(track)) track.lang = unsyncedLabel(track.code);
       else if (track.code && playing && audio) track.lang = audioLabel(track.code, audio);
-      else if (!track.code && !track.cc && profile.langMode === "custom" && audio) track.lang = `${track.lang} (${audio === "synced" ? "Synced by audio" : "Trying audio sync"})`;
+      else if (!track.code && profile.langMode === "custom") track.lang = withStatus(track.lang, synced(track), audio);
     }
     console.log(`${who} subtitles ${stremioRequest.id} file=${stremioRequest.filename ?? "-"} results=${ranked.length}${ranked[0] ? `(${closedCaptions ? "cc:" : ""}${refOf(ranked[0])})` : ""} extra=${extras.map((e) => `${e.lang}:${refOf(e.subtitle)}(${tierName((e.subtitle.quality ?? 1) as QualityTier)}${e.subtitle.releaseMatch ? ` match ${e.subtitle.releaseMatch}` : ""})`).join(",") || "none"} sync=${playing ? (unsynced.size ? `on, ${unsynced.size} known unsynced` : "on") : "off"} hints=${stremioRequest.videoHash ? "hash" : "-"},${stremioRequest.videoSize ? "size" : "-"}`);
 
     // Start syncing now, so they're ready when one is picked.
     if (playing && profile.aiostreamsUrl) {
-      const aio = profile.aiostreamsUrl;
-      const syncOne = (subtitle: RankedSubtitle, season: number | undefined, episode: number | undefined, code: string | undefined) =>
-        syncCaptions(
-          syncKey(refOf(subtitle), season, episode, playing.filename),
-          () => getCachedSubtitleFile(refOf(subtitle), season, episode, { ...keys, addonUrl: subtitle.sealedUrl ? openUrl(subtitle.sealedUrl) : undefined }),
-          aio,
-          playing.videoId,
-          playing.type,
-          playing.filename,
-          code
-        );
       // Fallbacks only when the track's own subtitle turns out not to sync, one at a time, so a
       // normal play costs nothing extra; the first that syncs is ready for the download and the next list.
-      for (const track of tracks.filter((t) => t.sync && t.alts.length)) {
+      for (const track of tracks.filter((t) => t.alts.length)) {
         void (async () => {
+          if (!(await listMayFetch(track.subtitle))) return;
           const own = await syncOne(track.subtitle, track.season, track.episode, track.code);
-          if (own && own.anchors.length > 0 && (!own.bySpeech || own.speechOnly)) return;
+          if (syncedWell(own)) return;
           for (const alt of track.alts) {
+            if (!(await listMayFetch(alt))) continue;
             const [s, e] = place(alt);
-            const result = await syncOne(alt, s, e, track.code).catch(() => undefined);
-            if (result && result.anchors.length > 0 && !result.bySpeech) {
+            const result = await syncOne(alt, s, e, track.code);
+            if (syncedWell(result)) {
               console.log(`${who} ${stremioRequest.id}: ${refOf(track.subtitle)} doesn't sync to this file; fallback ${refOf(alt)} does`);
               return;
             }
           }
-        })();
+        })().catch(() => undefined);
       }
-      for (const { subtitle, season, episode, code } of tracks.filter((t) => t.sync && synced(t) && !t.alts.length)) {
-        void syncCaptions(
-          syncKey(refOf(subtitle), season, episode, playing.filename),
-          () => getCachedSubtitleFile(refOf(subtitle), season, episode, { ...keys, addonUrl: subtitle.sealedUrl ? openUrl(subtitle.sealedUrl) : undefined }),
-          profile.aiostreamsUrl,
-          playing.videoId,
-          playing.type,
-          playing.filename,
-          code
-        );
+      for (const { subtitle, season, episode, code } of tracks.filter((t) => synced(t) && !t.alts.length)) {
+        void listMayFetch(subtitle)
+          .then((may) => (may ? syncOne(subtitle, season, episode, code) : undefined))
+          .catch(() => undefined);
       }
     }
 
@@ -644,7 +738,7 @@ function addonRoutes(): express.Router {
     // being worked out stay, and their fallbacks keep trying above, so a later list can show them.
     if (playing && profile.hideUnsynced) {
       const before = tracks.length;
-      for (let i = tracks.length - 1; i >= 0; i--) if (tracks[i].sync && unsynced.has(tracks[i].subtitle)) tracks.splice(i, 1);
+      for (let i = tracks.length - 1; i >= 0; i--) if (unsynced.has(tracks[i].subtitle)) tracks.splice(i, 1);
       if (tracks.length < before) {
         count("tracks.hiddenUnsynced", before - tracks.length);
         console.log(`${who} ${stremioRequest.id}: ${before - tracks.length} unsynced left out (this link lists synced only)`);
@@ -652,9 +746,11 @@ function addonRoutes(): express.Router {
     }
     const syncedCount = tracks.filter(synced).length;
     res.locals.activity = { kind: "list", what, result: `${tracks.length} track${tracks.length === 1 ? "" : "s"}${playing ? `, ${syncedCount} synced` : ""}${partial ? ", partial" : ""}` };
-    // A list that still says "Trying audio sync" is kept half a minute, not five: whoever keeps it
-    // (AIOStreams, a player) asks again sooner and gets the settled status.
-    const settling = [...audioOf.values()].includes("trying");
+    // A list that isn't settled is kept half a minute, not five: whoever keeps it (AIOStreams, a
+    // player) asks again sooner and gets the settled one. Not settled: a track says "Trying audio
+    // sync", a sync wasn't finished by the deadline (its "Synced" isn't known yet), or a source
+    // didn't answer in time.
+    const settling = [...audioOf.values()].includes("trying") || (Boolean(playing) && known.includes("unknown")) || partial;
     const keepFor = settling ? 30 : 300;
     res.set("Cache-Control", settling ? "max-age=30" : "max-age=300, stale-while-revalidate=900");
     res.json({
@@ -662,9 +758,7 @@ function addonRoutes(): express.Router {
         id: `aiosub-${refOf(track.subtitle)}`,
         lang: sentLanguage(profile, track),
         // AIOStreams' Jellyfin server shows label as the track's description; AIOMetadata shows lang.
-        label: track.cc
-          ? ["English CC", audioOf.get(track.subtitle) === "synced" ? "Synced by audio" : audioOf.get(track.subtitle) === "trying" ? "Trying audio sync" : undefined, "AIOSubtitles"].filter(Boolean).join(" · ")
-          : trackLabel(track.code, synced(track), audioOf.get(track.subtitle)),
+        label: trackLabel(track.code, synced(track), audioOf.get(track.subtitle), track.cc),
         url: downloadUrl(baseUrl, profile, track.subtitle, track.season, track.episode, synced(track) || track.alts.length ? playing : undefined, track.code, track.alts.map((alt) => ({ ref: refOf(alt), at: place(alt) })))
       })),
       cacheMaxAge: keepFor,
@@ -689,6 +783,8 @@ function addonRoutes(): express.Router {
         return;
       }
       count("downloads", 1, profile.name);
+      // Everything below, the subtitle's own fetch included, shares this one budget (see DOWNLOAD_BUDGET_MS).
+      const deadline = Date.now() + DOWNLOAD_BUDGET_MS;
       let ref = param(req.params.subtitleId);
       if (!/^(?:ss|sd|os)?[\w-]{1,64}$/.test(ref)) {
         res.status(400).send("Invalid subtitle id");
@@ -717,6 +813,7 @@ function addonRoutes(): express.Router {
         // the next in line takes its place now, so the player never gets an empty track. Subtitle
         // Cat's are passed over here: they are sent only once synced, further down.
         for (const [index, [, altRef, altSeason, altEpisode]] of alts.entries()) {
+          if (Date.now() > deadline) break;
           if (altRef.startsWith("sc")) continue;
           const s = altSeason ? Number(altSeason) : undefined;
           const e = altEpisode ? Number(altEpisode) : undefined;
@@ -735,16 +832,15 @@ function addonRoutes(): express.Router {
           // Nothing but Subtitle Cat's left: one of those, if it syncs to the file in time.
           const vid0 = typeof req.query.vid === "string" ? req.query.vid : "";
           const type0 = typeof req.query.type === "string" ? req.query.type : "";
-          const until = Date.now() + DOWNLOAD_BUDGET_MS;
           for (const [, altRef, altSeason, altEpisode] of alts.filter((a) => a[1].startsWith("sc"))) {
-            if (!profile.aiostreamsUrl || !vid0 || !type0 || !fileName || Date.now() > until) break;
+            if (!profile.aiostreamsUrl || !vid0 || !type0 || !fileName || Date.now() > deadline) break;
             const s = altSeason ? Number(altSeason) : undefined;
             const e = altEpisode ? Number(altEpisode) : undefined;
             try {
               const altFile = await getCachedSubtitleFile(altRef, s, e, keysOf(profile));
               const job = syncCaptions(syncKey(altRef, s, e, fileName), async () => altFile, profile.aiostreamsUrl, vid0, type0, fileName, lang0);
-              const done = await Promise.race([job, new Promise<"wait">((resolve) => setTimeout(() => resolve("wait"), Math.max(0, until - Date.now())))]);
-              if (done !== "wait" && done && done.anchors.length > 0 && (!done.bySpeech || done.speechOnly)) {
+              const done = await Promise.race([job, new Promise<"wait">((resolve) => setTimeout(() => resolve("wait"), Math.max(0, deadline - Date.now())))]);
+              if (syncedWell(done)) {
                 subtitle = altFile;
                 [ref, season, episode] = [altRef, s, e];
                 alts = [];
@@ -771,7 +867,6 @@ function addonRoutes(): express.Router {
         const key = syncKey(ref, season, episode, file);
         const fetched = subtitle;
         const job = syncCaptions(key, async () => fetched, profile.aiostreamsUrl, vid, type, file, lang);
-        const deadline = Date.now() + DOWNLOAD_BUDGET_MS;
         const within = (ms: number) => Promise.race([job, new Promise<"wait">((resolve) => setTimeout(() => resolve("wait"), Math.max(0, Math.min(ms, deadline - Date.now()))))]);
         let synced = await within(SYNC_WAIT_MS);
         // Still refining after the wait: the first windows' timing is nearly always right already.
@@ -795,17 +890,16 @@ function addonRoutes(): express.Router {
           }
         }
         // Timed only by speech: an alternate that fits the file's subtitles is sent instead, if one does.
-        if (final && (!synced || synced === "wait" || synced.anchors.length === 0 || (synced.bySpeech && !synced.speechOnly))) {
-          const giveUp = Math.min(Date.now() + FALLBACK_MS, deadline);
+        if (final && !syncedWell(synced)) {
           for (const [, altRef, altSeason, altEpisode] of alts) {
-            if (Date.now() > giveUp) break;
+            if (Date.now() > deadline) break;
             const s = altSeason ? Number(altSeason) : undefined;
             const e = altEpisode ? Number(altEpisode) : undefined;
             try {
               const altFile = await getCachedSubtitleFile(altRef, s, e, keysOf(profile));
               const altJob = syncCaptions(syncKey(altRef, s, e, file), async () => altFile, profile.aiostreamsUrl, vid, type, file, lang);
-              const altSynced = await Promise.race([altJob, new Promise<"wait">((resolve) => setTimeout(() => resolve("wait"), Math.max(0, giveUp - Date.now())))]);
-              if (altSynced !== "wait" && altSynced && altSynced.anchors.length > 0 && (!altSynced.bySpeech || altSynced.speechOnly)) {
+              const altSynced = await Promise.race([altJob, new Promise<"wait">((resolve) => setTimeout(() => resolve("wait"), Math.max(0, deadline - Date.now())))]);
+              if (syncedWell(altSynced)) {
                 served = altSynced.file;
                 outcome = "synced (fallback)";
                 count("downloads.fallback");

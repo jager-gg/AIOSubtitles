@@ -206,9 +206,9 @@ describe("the dashboard's activity pages", () => {
 describe("errors the owner can trace and undo", () => {
   it("keep the link and title they happened on, and a clear can be undone", async () => {
     const stats = await import("../src/stats.js");
-    stats.requestContext.run({ link: "cccc3333/three" }, () => stats.noteError("request", new Error("SubSource 503 for /subtitles"), "English Dub · Dr. Ember S2 - 01"));
+    stats.requestContext.run({ link: "cccc3333/three" }, () => stats.noteError("request", new Error("SubSource 503 for /subtitles"), "English Dub · Show S2 - 01"));
     const noted = (await stats.statsView("t")).errors.find((e) => e.message.startsWith("SubSource 503"));
-    expect(noted).toMatchObject({ link: "cccc3333/three", what: "English Dub · Dr. Ember S2 - 01" });
+    expect(noted).toMatchObject({ link: "cccc3333/three", what: "English Dub · Show S2 - 01" });
     await stats.clearErrors();
     expect((await stats.statsView("t")).errors).toEqual([]);
     expect(stats.canUndoClear()).toBe(true);
@@ -328,5 +328,17 @@ describe("the link the dashboard's Edit opens", () => {
     expect((await fetch(`${base}/${copy}/configure`)).status).toBe(200);
     expect((await fetch(`${base}/${copy}/manifest.json`)).status).toBe(200);
     expect(JSON.stringify(knownLinks())).toBe(before);
+  });
+});
+
+describe("the configure page's words", () => {
+  it("name every source, show the labels players get, and say Subtitle Cat needs company", async () => {
+    const html = await (await fetch(`${base}/configure`)).text();
+    expect(html).toContain("SubSource, SubDL, OpenSubtitles, Subtitle Cat and your own addons.");
+    expect(html).toContain("English<small>Dub · Synced · AIOSubtitles</small>");
+    expect(html).not.toContain("English Dub<small>");
+    expect(html).toContain("works beside at least one other source");
+    expect(problem({ ...settings, subsource: undefined, subtitlecat: true })).toBe("Sources: Subtitle Cat needs another source beside it. Add a SubSource or SubDL key, turn on OpenSubtitles, or add an addon");
+    expect(problem({ ...settings, subsource: undefined })).toBe("Sources: Add a SubSource or SubDL key, turn on OpenSubtitles, or add an addon");
   });
 });

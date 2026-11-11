@@ -233,8 +233,8 @@ type Measurement = { measuredWindows: Array<{ from: number; to: number; measured
 /**
  * A long measurement written as steps: each `yield` is a point where the server may answer other
  * requests before going on. Measuring a film against six frame rates takes seconds of CPU, and
- * Node runs it on the one thread that also answers lists and downloads (Pit Lane 2025: 12 s
- * during which a download couldn't even be told to stop waiting).
+ * Node runs it on the one thread that also answers lists and downloads (seen on a long film:
+ * 12 s during which a download couldn't even be told to stop waiting).
  */
 type Steps<T> = Generator<void, T, void>;
 
@@ -265,7 +265,7 @@ function trusted(m: Measurement): boolean {
 /**
  * How many times the shift jumps (by more than JUMP_MS) from one anchor to the next. Smaller moves
  * don't count: a subtitle running a touch fast or slow creeps by half a second a minute or so
- * between its cuts (Night Patrol S01E06, one English subtitle on the HiggsBoson release).
+ * between its cuts (seen: an English subtitle on one web release).
  */
 export function shiftChanges(anchors: Anchor[]): number {
   const sorted = [...anchors].sort((a, b) => a.from - b.from);
@@ -423,8 +423,8 @@ export interface Measured {
 /**
  * Where a line starts after a pause, and where someone starts talking after one: the points speech
  * and lines share. Dialogue covers most of a scene, so how much two timelines overlap barely changes
- * when one is shifted by seconds; where speech starts doesn't (The Analyst: speech started within
- * 0.1 s of 10 of 16 lines).
+ * when one is shifted by seconds; where speech starts doesn't (seen: speech started within 0.1 s
+ * of 10 of 16 lines).
  */
 function onsets(cues: Cue[], pause: number): number[] {
   const out: number[] = [];
@@ -554,7 +554,7 @@ export function measureWindow(embedded: Cue[], captions: Cue[], range = 20000): 
   // Local peaks, each refined to 5 ms.
   const peaks: Array<{ offset: number; score: number }> = [];
   // The two ends of the range aren't peaks: the fit may still be rising past them, towards a shift
-  // that wasn't searched (The Analyst S05E09: windows "fitting" at exactly -20.0 s).
+  // that wasn't searched (seen: windows "fitting" at exactly -20.0 s).
   for (let i = 1; i < scores.length - 1; i++) {
     if (scores[i] <= 0 || scores[i] < scores[i - 1] || scores[i] < scores[i + 1]) continue;
     let peak = { offset: -range + i * 40, score: scores[i] };
@@ -581,8 +581,8 @@ export function measureWindow(embedded: Cue[], captions: Cue[], range = 20000): 
  * window can score, so it is passed over; a new timing that lasts is followed.
  *
  * This replaced taking the one shift most windows support and pulling every window towards it:
- * on an episode whose shift changes four times (Night Patrol S01E06, Dutch:
- * -2.2, -4.5, -7.0, -9.6 and -12.1 s) that read minutes 13 to 25 at the first shift, 2.3 to 4.8 s
+ * on an episode whose shift changes four times (seen: a Dutch subtitle
+ * needing -2.2, -4.5, -7.0, -9.6 and -12.1 s) that read minutes 13 to 25 at the first shift, 2.3 to 4.8 s
  * late, though most of those windows' own best fits were right.
  *
  * A window that still disagrees with every other one by more than 1.5 s is dropped: a change seen
@@ -642,7 +642,7 @@ const MAX_RUNS = 64;
 /**
  * Windows measure the same release a few hundred ms apart, because dub lines
  * and translated lines never start at quite the same moment (seen: -0.88 to
- * -1.16 s within one Iron Lantern episode). Differences under this are noise.
+ * -1.16 s within one episode). Differences under this are noise.
  */
 const AGREE_MS = 500;
 
@@ -702,17 +702,28 @@ export function planShifts(anchors: Anchor[], captions: Cue[], reference: Cue[] 
     return () => median;
   }
 
+  // Runs of anchors whose neighbours agree: a step sits only where two neighbours differ by more than
+  // AGREE_MS. Each run takes the median of its own anchors' shifts, as a file with one run does
+  // above. (It used to take the shift of the anchor that started it, for the whole run: a subtitle
+  // whose windows read +0.46, +0.15, -0.20, ... around a true 0 was served 0.46 s late throughout.)
+  const runs: Anchor[][] = [[sorted[0]]];
+  for (let i = 1; i < sorted.length; i++) {
+    if (Math.abs(sorted[i].offset - sorted[i - 1].offset) > AGREE_MS) runs.push([]);
+    runs[runs.length - 1].push(sorted[i]);
+  }
+  const shiftOf = runs.map((run) => {
+    const offsets = run.map((a) => a.offset).sort((a, b) => a - b);
+    return offsets[Math.floor(offsets.length / 2)];
+  });
   // Boundaries in caption time (the times as written in the caption file).
   const bounds: Array<{ at: number; offset: number }> = [];
-  for (let i = 0; i < sorted.length - 1; i++) {
-    const a = sorted[i];
-    const b = sorted[i + 1];
-    if (Math.abs(a.offset - b.offset) <= AGREE_MS) continue;
+  for (let i = 0; i < runs.length - 1; i++) {
+    const a = { ...runs[i][runs[i].length - 1], offset: shiftOf[i] };
+    const b = { ...runs[i + 1][0], offset: shiftOf[i + 1] };
     bounds.push({ at: placeStep(a, b, captions, reference), offset: b.offset });
   }
-  const first = sorted[0].offset;
   return (start) => {
-    let offset = first;
+    let offset = shiftOf[0];
     for (const bound of bounds) if (start >= bound.at) offset = bound.offset;
     return offset;
   };
@@ -1182,8 +1193,8 @@ function anchorsFile(filename: string): string {
 /**
  * Files AIOStreams didn't list, by when that was seen. A player names the stream that was picked; when
  * it was dead and AIOStreams failed over to another one, the picked one drops out of later lists
- * (Room Twelve S1E2: a dead usenet REMUX; Harbor S1E7: three NTb NZBs missing on
- * the providers, then a TorBox file played while the player still named the first). AIOStreams drops
+ * (seen: a dead usenet REMUX; three NZBs missing on the providers, then a file from
+ * another service played while the player still named the first). AIOStreams drops
  * a failed NZB from later lists, and which file failover played is known only to it, so lists show
  * these tracks unsynced: timing from the named file would be wrong for the one playing. The list is
  * asked for a few times first (see lookUpStreamAgain); after that the lookup isn't repeated for
@@ -1191,7 +1202,7 @@ function anchorsFile(filename: string): string {
  */
 const unlisted = new Map<string, number>();
 const UNLISTED_MS = 10 * 60 * 1000;
-/** A search through every indexer can take a while the first time (Harbor S1E8 ran past 20 s); nothing waits on it but the sync. */
+/** A search through every indexer can take a while the first time (one ran past 20 s); nothing waits on it but the sync. */
 const STREAM_LOOKUP_TIMEOUT_MS = 45 * 1000;
 /** One lookup per file at a time: the header read and the windows share it, so indexers are searched once. */
 const lookups = new Map<string, Promise<string | undefined>>();
@@ -1203,7 +1214,7 @@ export function lookUpStream(aiostreamsUrl: string, videoId: string, type: strin
 
 /**
  * As lookUpStream, asking again when the file isn't listed. AIOStreams' list for one title differs
- * from one request to the next (a slow source misses one answer and is in the next): Pit Lane 2025,
+ * from one request to the next (a slow source misses one answer and is in the next): a film's file
  * wasn't in the list asked for at play and was in one asked for a minute later, and two
  * lists a second apart differed. It is asked again after each of `waits` before the file counts as
  * unlisted. A file failover replaced is in none of them, so that costs only the wait.
@@ -1628,7 +1639,7 @@ function measureAll(found: FileAnchors, captions: Cue[]) {
   const measuredWindows = found.windows.flatMap((w) => {
     if (w.bridge) return [];
     // An index minute with only a few lines (a cold open before the opening song) is too few to time
-    // by; it takes its neighbours' timing (Iron Lantern 013: 3 lines, 0.5 s off against the voices).
+    // by; it takes its neighbours' timing (seen: 3 lines, 0.5 s off against the voices).
     if (found.source === "index" && w.cues.length < INDEX_MIN_WINDOW_LINES) return [];
     const measured = measureWindow(w.cues, captions);
     return measured ? [{ from: w.from, to: w.to, measured }] : [];
@@ -1639,8 +1650,8 @@ function measureAll(found: FileAnchors, captions: Cue[]) {
 
 /**
  * On index windows, which follow each other minute by minute: a window whose shift is far from both
- * neighbours while they agree is a chance fit, not a cut (a cut changes every window after it). Seen on
- * Iron Lantern 013, OpenSubtitles English: +1.24 s, +5.76 s, +1.27 s at 2, 3 and 4 minutes.
+ * neighbours while they agree is a chance fit, not a cut (a cut changes every window after it). Seen with
+ * an OpenSubtitles English: +1.24 s, +5.76 s, +1.27 s at 2, 3 and 4 minutes.
  */
 export function dropSpikes(anchors: Anchor[]): Anchor[] {
   const sorted = [...anchors].sort((a, b) => a.from - b.from);
@@ -1654,7 +1665,7 @@ export function dropSpikes(anchors: Anchor[]): Anchor[] {
 }
 
 const SPIKE_MS = 1500;
-/** Index windows with fewer lines aren't measured (minutes of dialogue held 8 to 27 on Iron Lantern). */
+/** Index windows with fewer lines aren't measured (minutes of dialogue held 8 to 27 on one episode). */
 const INDEX_MIN_WINDOW_LINES = 6;
 
 // ---------- which of the file's tracks to time by ----------
@@ -1856,7 +1867,7 @@ export function firstPassSync(key: string): SyncResult | undefined {
 }
 
 /** Bumped when the sync method changes: older results are ignored and download URLs change, so no cache keeps old timing. */
-export const SYNC_VERSION = 11;
+export const SYNC_VERSION = 12;
 
 /**
  * Whether captions belong to the file at all: at least half of the measured
@@ -1873,8 +1884,8 @@ export function landsOnTiming(windows: Array<{ from: number; measured: Measured 
 
 /**
  * How close a window's own best fit must be to the final timing to count as landing on it. Wider
- * than AGREE_MS, for timing that drifts a little (The Analyst S3E8 English: 0.98 s read where the
- * final timing is 0.32 s); a coincidental fit sits seconds away (misfiled Dr. Ember: 2.6 to 18 s).
+ * than AGREE_MS, for timing that drifts a little (seen: 0.98 s read where the final timing is
+ * 0.32 s); a coincidental fit sits seconds away (a misfiled subtitle: 2.6 to 18 s).
  */
 const LAND_MS = 1000;
 
@@ -1882,8 +1893,8 @@ export function fitsFile(windows: Array<{ measured: Measured }>): boolean {
   if (windows.length < 3) return true;
   const supported = windows.filter((w, i) => windows.some((o, j) => j !== i && Math.abs(o.measured.offset - w.measured.offset) <= AGREE_MS)).length;
   if (supported * 2 >= windows.length) return true;
-  // Timing that drifts a little across the file spreads past AGREE_MS (seen: -0.1, 0.2 and 1.0 s on
-  // The Analyst, refined to 0.0-0.4 s). Three windows within BAND_MS of each other still fit:
+  // Timing that drifts a little across the file spreads past AGREE_MS (seen: -0.1, 0.2 and 1.0 s,
+  // refined to 0.0-0.4 s). Three windows within BAND_MS of each other still fit:
   // another episode's captions scatter over the whole ±20 s. landsOnTiming checks again afterwards.
   const sorted = windows.map((w) => w.measured.offset).sort((a, b) => a - b);
   return sorted.some((offset, i) => i + 2 < sorted.length && sorted[i + 2] - offset <= BAND_MS);
@@ -1893,9 +1904,9 @@ export function fitsFile(windows: Array<{ measured: Measured }>): boolean {
 const BAND_MS = 1500;
 
 export function syncKey(ref: string | number, season: number | undefined, episode: number | undefined, filename: string): string {
-  // SubSource ids keep their earlier keys, so their synced results stay valid.
-  const subtitleId = typeof ref === "number" ? ref : /^ssd+$/.test(ref) ? Number(ref.slice(2)) : ref;
-  return cacheKey({ kind: "synced", subtitleId, season, episode, filename, version: SYNC_VERSION });
+  // The ref as every caller passes it ("ss123", "osar-456"): the key must not change, or every synced
+  // result is made again.
+  return cacheKey({ kind: "synced", subtitleId: ref, season, episode, filename, version: SYNC_VERSION });
 }
 
 /**
@@ -2021,7 +2032,7 @@ export function syncCaptions(
     if (notes.length) console.log(`sync: ${filename}: ${notes.join("; ")}`);
     await mkdir(cachePath("synced"), { recursive: true });
     // A real sync lands most windows on the final timing with their own best fit. One built mostly
-    // from second-best fits (seen: a misfiled Dr. Ember Arabic, 1 of 8 windows) is a coincidence:
+    // from second-best fits (seen: a misfiled Arabic, 1 of 8 windows) is a coincidence:
     // left unsynced, so a fallback gets its turn. Every real sync so far had 5/5 to 9/10.
     if (anchors.length > 0 && !landsOnTiming(measuredWindows, anchors)) {
       console.log(`sync: ${filename}: timing rests on second-best fits, not counted as synced`);

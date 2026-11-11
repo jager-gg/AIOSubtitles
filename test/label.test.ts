@@ -9,6 +9,15 @@ describe("synced track labels", () => {
     expect(syncedLabel("french")).toBe("French (Synced)");
   });
 
+  it("puts the status in the dub captions' and English CC's names too, for players that show only names", async () => {
+    const { withStatus } = await import("../src/app.js");
+    expect(withStatus("English Dub", true)).toBe("English Dub (Synced)");
+    expect(withStatus("English CC", true)).toBe("English CC (Synced)");
+    expect(withStatus("English Dub", true, "synced")).toBe("English Dub (Synced by audio)");
+    expect(withStatus("English Dub", true, "trying")).toBe("English Dub (Trying audio sync)");
+    expect(withStatus("English Dub", false)).toBe("English Dub");
+  });
+
   it("names unsynced tracks after the addon too, not a plain language", async () => {
     const { unsyncedLabel } = await import("../src/app.js");
     expect(unsyncedLabel("Arabic")).toBe("Arabic · AIOSubtitles");
@@ -19,16 +28,18 @@ describe("synced track labels", () => {
 describe("track descriptions (AIOStreams' label)", async () => {
   const { trackLabel } = await import("../src/app.js");
   it("names the addon on every track", () => {
-    expect(trackLabel(undefined, true)).toBe("English Dub · Synced · AIOSubtitles");
-    expect(trackLabel(undefined, false)).toBe("English Dub · AIOSubtitles");
+    expect(trackLabel(undefined, true)).toBe("Dub · Synced · AIOSubtitles");
+    expect(trackLabel(undefined, false)).toBe("Dub · AIOSubtitles");
     expect(trackLabel("Arabic", true)).toBe("Synced · AIOSubtitles");
     expect(trackLabel("Arabic", false)).toBe("AIOSubtitles");
+    expect(trackLabel(undefined, true, undefined, true)).toBe("CC · Synced · AIOSubtitles");
+    expect(trackLabel(undefined, false, undefined, true)).toBe("CC · AIOSubtitles");
   });
 
   it("marks timing by speech in the audio apart", async () => {
     const { audioLabel } = await import("../src/app.js");
     expect(trackLabel("Arabic", true, "synced")).toBe("Synced by audio · AIOSubtitles");
-    expect(trackLabel(undefined, true, "synced")).toBe("English Dub · Synced by audio · AIOSubtitles");
+    expect(trackLabel(undefined, true, "synced")).toBe("Dub · Synced by audio · AIOSubtitles");
     expect(trackLabel("Arabic", false, "synced")).toBe("AIOSubtitles");
     expect(audioLabel("ara")).toBe("Arabic (Synced by audio)");
   });
@@ -36,14 +47,14 @@ describe("track descriptions (AIOStreams' label)", async () => {
   it("doesn't claim an audio sync that hasn't finished", async () => {
     const { audioLabel } = await import("../src/app.js");
     expect(trackLabel("Arabic", true, "trying")).toBe("Trying audio sync · AIOSubtitles");
-    expect(trackLabel(undefined, true, "trying")).toBe("English Dub · Trying audio sync · AIOSubtitles");
+    expect(trackLabel(undefined, true, "trying")).toBe("Dub · Trying audio sync · AIOSubtitles");
     expect(audioLabel("ara", "trying")).toBe("Arabic (Trying audio sync)");
   });
 
   it("puts the episode in front of a file named by a random id, in the activity list", () => {
     expect(describeRequest("po0xCP6G.mkv", "tt0000006:3:8", 3, 8)).toBe("S03E08 · po0xCP6G");
-    expect(describeRequest("The.Analyst.S03E09.1080p.mkv", "tt0000006:3:9", 3, 9)).toBe("The.Analyst.S03E09.1080p");
-    expect(describeRequest("[LanternGuild] Iron Lantern 013 (BD 1080p).mkv", "kitsu:1", 1, 13)).toBe("[LanternGuild] Iron Lantern 013 (BD 1080p)");
+    expect(describeRequest("Show.S03E09.1080p.mkv", "tt0000006:3:9", 3, 9)).toBe("Show.S03E09.1080p");
+    expect(describeRequest("[Group] Show 013 (BD 1080p).mkv", "kitsu:1", 1, 13)).toBe("[Group] Show 013 (BD 1080p)");
     expect(describeRequest(undefined, "tt0000006:3:8", 3, 8)).toBe("tt0000006:3:8");
   });
 });
@@ -104,5 +115,20 @@ describe("English Dub and regular English", async () => {
     const { config } = await import("../src/config.js");
     config.configSecret ??= "label-test-secret-label-test-secret-1";
     expect(linkSummary(sealSettings({ ...base, languages: ["English", REGULAR_ENGLISH] }))?.languages).toEqual(["English Dub", "English"]);
+  });
+});
+
+describe("whether a sync is good enough to serve", () => {
+  it("is one rule everywhere: anchors, and speech only on a file with no subtitle track", async () => {
+    const { syncedWell } = await import("../src/app.js");
+    const anchors = [{ from: 0, to: 60000, offset: 500, score: 0.9 }];
+    expect(syncedWell({ file: "x.srt", anchors })).toBe(true);
+    expect(syncedWell({ file: "x.srt", anchors: [] })).toBe(false);
+    expect(syncedWell({ file: "x.srt", anchors, bySpeech: true })).toBe(false);
+    expect(syncedWell({ file: "x.srt", anchors, bySpeech: true, speechOnly: true })).toBe(true);
+    expect(syncedWell({ file: "x.srt", anchors, byLines: true })).toBe(true);
+    expect(syncedWell(undefined)).toBe(false);
+    expect(syncedWell("late")).toBe(false);
+    expect(syncedWell("wait")).toBe(false);
   });
 });

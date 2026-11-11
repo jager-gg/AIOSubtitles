@@ -1,11 +1,27 @@
-/** Codes whose subtitles, when not UTF-8, are usually in this Windows code page. */
+/** Languages (code or name) whose subtitles, when not UTF-8, are usually in this code page: Windows' own, or GBK, Big5, Shift JIS, EUC-KR. */
 const LEGACY: Record<string, string> = {
   ara: "windows-1256", ar: "windows-1256", arabic: "windows-1256",
   fas: "windows-1256", per: "windows-1256", persian: "windows-1256", farsi: "windows-1256", urdu: "windows-1256",
   rus: "windows-1251", russian: "windows-1251", ukr: "windows-1251", ukrainian: "windows-1251", bul: "windows-1251", bulgarian: "windows-1251",
   gre: "windows-1253", greek: "windows-1253", tur: "windows-1254", turkish: "windows-1254", heb: "windows-1255", hebrew: "windows-1255",
-  pol: "windows-1250", polish: "windows-1250", cze: "windows-1250", czech: "windows-1250", hun: "windows-1250", hungarian: "windows-1250", rum: "windows-1250", romanian: "windows-1250"
+  pol: "windows-1250", polish: "windows-1250", cze: "windows-1250", czech: "windows-1250", hun: "windows-1250", hungarian: "windows-1250", rum: "windows-1250", romanian: "windows-1250",
+  // Serbian subtitles are mostly written in Latin letters, so in the Central European page.
+  srp: "windows-1250", scc: "windows-1250", serbian: "windows-1250", hrv: "windows-1250", scr: "windows-1250", croatian: "windows-1250",
+  bos: "windows-1250", bosnian: "windows-1250", slk: "windows-1250", slo: "windows-1250", slovak: "windows-1250", slv: "windows-1250", slovenian: "windows-1250",
+  lit: "windows-1257", lithuanian: "windows-1257", lav: "windows-1257", latvian: "windows-1257", est: "windows-1257", estonian: "windows-1257",
+  tha: "windows-874", thai: "windows-874", vie: "windows-1258", vietnamese: "windows-1258",
+  chi: "gbk", zho: "gbk", chinese: "gbk", "chinese (simplified)": "gbk", "chinese bilingual": "gbk", "chinese (traditional)": "big5",
+  jpn: "shift_jis", japanese: "shift_jis", kor: "euc-kr", korean: "euc-kr"
 };
+
+/** A decoder for a legacy page, or Windows-1252 when this Node can't decode that page. */
+function legacyDecoder(page: string | undefined): TextDecoder {
+  try {
+    return new TextDecoder(page ?? "windows-1252");
+  } catch {
+    return new TextDecoder("windows-1252");
+  }
+}
 
 /**
  * UTF-16, which Windows tools often save subtitles in, from its byte order
@@ -41,6 +57,6 @@ export function decodeSubtitle(raw: Buffer, lang?: string): string {
   try {
     return new TextDecoder("utf-8", { fatal: true }).decode(raw).replace(/^﻿/, "");
   } catch {
-    return new TextDecoder(LEGACY[(lang ?? "").toLowerCase()] ?? "windows-1252").decode(raw);
+    return legacyDecoder(LEGACY[(lang ?? "").trim().toLowerCase()]).decode(raw);
   }
 }

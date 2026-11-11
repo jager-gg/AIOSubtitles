@@ -72,10 +72,17 @@ async function fetchSource(ref: string, keys: SourceKeys): Promise<Buffer> {
   return ref.startsWith("os") ? Buffer.from(repairOpenSubtitlesVtt(body.toString("utf8")), "utf8") : body;
 }
 
+const downloadFile = (ref: string) => path.join(cachePath("downloads"), `${cacheName(ref)}.bin`);
+
+/** Whether this subtitle was downloaded already, so getting it again costs its source nothing. */
+export function isDownloaded(ref: string): Promise<boolean> {
+  return exists(downloadFile(ref));
+}
+
 async function ensureDownloadCached(ref: string, keys: SourceKeys): Promise<string> {
   const folder = cachePath("downloads");
   await mkdir(folder, { recursive: true });
-  const file = path.join(folder, `${cacheName(ref)}.bin`);
+  const file = downloadFile(ref);
   if (!(await exists(file))) {
     // One real download from a source; a cached file costs nothing.
     const source = /^(?:ss)?\d+$/.test(ref) ? "subsource" : ref.startsWith("sd") ? "subdl" : ref.startsWith("os") ? "opensubtitles" : ref.startsWith("sc") ? "subtitlecat" : "addons";
@@ -108,8 +115,8 @@ const MAX_UNPACKED_BYTES = 20 * 1024 * 1024;
 
 /**
  * The run of episodes one file covers, when its name gives one of three or more: "EP1-EP9 en.srt",
- * "10-18en.srt". Such a file is the subtitle of a compilation video (Crown of Frost on SubSource:
- * a pack of three files for episodes 1 to 26), not of any one episode: its "EP1" would
+ * "10-18en.srt". Such a file is the subtitle of a compilation video (seen on SubSource: a pack of
+ * three files for episodes 1 to 26), not of any one episode: its "EP1" would
  * otherwise be taken for episode 1. Two episodes ("S01E01-E02") is a double episode and stays.
  */
 export function compilationRange(name: string): { from: number; to: number } | undefined {
@@ -120,6 +127,18 @@ export function compilationRange(name: string): { from: number; to: number } | u
   return range && range.to - range.from >= 2 ? range : undefined;
 }
 
+/**
+ * A name without the season half of its season-and-episode markers ("Show - S02E01" -> "Show - E01",
+ * "2x01" -> "x01", "E01 S02" -> "E01 "), so a season's digits are never read as a bare episode number:
+ * "S02E01" was taken for episode 2 (a SubDL "season pack" holding only episode 1).
+ */
+export function withoutSeasons(name: string): string {
+  return name
+    .replace(/s\s*\d{1,2}(?=\s*e\s*\d)/gi, "")
+    .replace(/(e\s*\d{1,3}\D{0,4})s\s*\d{1,2}(?!\d)/gi, "$1")
+    .replace(/\b\d{1,2}(?=x\d)/gi, "");
+}
+
 export function selectArchiveEntry(zip: AdmZip, season?: number, episode?: number): AdmZip.IZipEntry | undefined {
   const every = zip.getEntries().filter((entry) => !entry.isDirectory && fileLooksLikeSubtitle(entry.entryName));
   // For an episode, files that each cover a run of episodes aren't candidates.
@@ -127,19 +146,19 @@ export function selectArchiveEntry(zip: AdmZip, season?: number, episode?: numbe
   if (season && episode) {
     const named =
       files.find((entry) => episodeMarkerMatches(entry.entryName, season, episode)) ??
-      files.find((entry) => bareEpisodeMarkerMatches(entry.entryName, episode));
+      files.find((entry) => bareEpisodeMarkerMatches(withoutSeasons(entry.entryName), episode));
     if (named) return named;
   }
 
-  // A film's zip often holds the same subtitle under several release names (Tempo: the FraMeSToR
-  // and Machine remuxes, both 88 KB): the fullest one, never a forced-lines file. Sync then checks it fits.
+  // A film's zip often holds the same subtitle under several release names (seen: two remuxes'
+  // names, both 88 KB): the fullest one, never a forced-lines file. Sync then checks it fits.
   if (!(season && episode) && files.length > 1) {
     const full = files.filter((entry) => !/forced|signs?\b/i.test(entry.entryName));
     return (full.length ? full : files).reduce((a, b) => (b.header.size > a.header.size ? b : a));
   }
 
   // A lone file is the episode only if its name doesn't say it's another one: SubDL lists
-  // "season packs" that hold just episode 1 ("Iron Lantern - S01E01 (001).srt").
+  // "season packs" that hold just episode 1 ("Show - S01E01 (001).srt").
   if (files.length !== 1) return undefined;
   return season && episode && namesAnotherEpisode(files[0].entryName, episode) ? undefined : files[0];
 }

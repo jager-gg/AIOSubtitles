@@ -93,7 +93,7 @@ To change settings later, click **Reconfigure** on AIOSubtitles in AIOStreams. S
 |---|---|---|
 | Skip languages the file already has | Lists every language | Leaves out languages the file has its own full subtitles for (English Dub is always listed) |
 | Only subtitles that sync | Lists subtitles that can't be synced, marked as not synced | Leaves them out |
-| Status in the track name | Tracks are named by language ("Arabic"), with the status in the description | "Arabic (Synced)", for players that show only the name |
+| Status in the track name | Tracks are named by language ("Arabic"), with the status in the description | "Arabic (Synced)" and "English Dub (Synced)", for players that show only the name |
 
 To share the server, give people `<PUBLIC_BASE_URL>/configure`, and the `ADDON_PASSWORD` if you set one. Each person uses their own keys and their own AIOStreams.
 

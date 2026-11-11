@@ -3,12 +3,12 @@ import { agreeAnchors, holdsTogether, shiftChanges, dialogueCues, imageCues, mea
 
 const ASS = `[Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-Dialogue: 0,0:09:56.78,0:10:02.74,Signs,,0,0,0,,{\\pos(320,40)}28th Wizard King
-Dialogue: 0,0:09:58.70,0:10:04.04,Default,,0,0,0,,{\\an8}What am I doing?
-Dialogue: 0,0:10:05.00,0:10:07.50,Default,,0,0,0,,I'm strolling, of course.
-Dialogue: 1,0:10:05.00,0:10:07.50,Default,,0,0,0,,I'm strolling, of course.
+Dialogue: 0,0:09:56.78,0:10:02.74,Signs,,0,0,0,,{\\pos(320,40)}A sign on a wall
+Dialogue: 0,0:09:58.70,0:10:04.04,Default,,0,0,0,,{\\an8}The first line here.
+Dialogue: 0,0:10:05.00,0:10:07.50,Default,,0,0,0,,The second line here.
+Dialogue: 1,0:10:05.00,0:10:07.50,Default,,0,0,0,,The second line here.
 Dialogue: 0,0:10:08.00,0:10:09.00,OP,,0,0,0,,{\\k20}la la
-Dialogue: 0,0:10:10.00,0:10:12.00,Default,,0,0,0,,{\\i1}Asta!{\\i0}
+Dialogue: 0,0:10:10.00,0:10:12.00,Default,,0,0,0,,{\\i1}Hello!{\\i0}
 `;
 
 /** Speech-like cues every ~3.5 s with varied lengths, from `from` for `count` lines. */
@@ -92,7 +92,7 @@ describe("anchor sync", () => {
     const w = (from: number, offset: number, alternatives: Array<{ offset: number; score: number }> = []) => ({
       from, to: from + 40000, measured: { offset, score: 0.9, alternatives }
     });
-    // Iron Lantern E14 iAHD (picture subtitles).
+    // Picture subtitles on a Blu-ray release.
     expect(
       agreeAnchors([
         w(458000, 17080, [{ offset: 400, score: 0.88 }]),
@@ -107,7 +107,7 @@ describe("anchor sync", () => {
     const w = (minute: number, offset: number, alternatives: Array<{ offset: number; score: number }> = [], score = 0.9) => ({
       from: minute * 60000, to: (minute + 1) * 60000, measured: { offset, score, alternatives }
     });
-    // Night Patrol S01E06, Dutch, on the FraMeSToR release: the subtitle was cut for other
+    // A Dutch subtitle on a remux: the subtitle was cut for other
     // breaks, so its shift steps from -2.2 s to -4.5, -7.0, -9.6 and -12.1 s. The first shift fits
     // the most windows and is a near-best fit in several later ones.
     const windows = [
@@ -181,6 +181,22 @@ describe("anchor sync", () => {
     expect(shift(lastBefore - 1)).toBe(-1000);
     expect(shift(700000)).toBe(4000);
   });
+
+  it("gives a stretch whose windows wobble its median shift, not its first window's", () => {
+    // Every window within 0.5 s of the next, but 0.78 s apart overall, around a true shift near 0.
+    const offsets = [455, 150, -200, 280, -200, 15, 120, 225, 200, 160, -160, 0, 55, -320, 40, 90];
+    const shift = planShifts(offsets.map((offset, i) => ({ from: i * 60000, to: (i + 1) * 60000, offset, score: 0.9 })), speech(0, 300));
+    expect(shift(0)).toBe(90);
+    expect(shift(900000)).toBe(90);
+  });
+
+  it("gives each stretch between two steps its own median", () => {
+    const captions = [...speech(0, 150), ...speech(700000, 150)].sort((a, b) => a.start - b.start);
+    const at = (from: number, offset: number) => ({ from, to: from + 60000, offset, score: 0.9 });
+    const shift = planShifts([at(60000, 400), at(180000, -100), at(300000, 200), at(900000, 3600), at(1020000, 4100), at(1140000, 3800)], captions);
+    expect(shift(1000)).toBe(200);
+    expect(shift(1100000)).toBe(3800);
+  });
 });
 
 describe("adaptive windows", async () => {
@@ -193,7 +209,7 @@ describe("adaptive windows", async () => {
     expect(refinementStarts(found, [a(214000, 900), a(456000, 950), a(712000, 880), a(968000, 920), a(1210000, 900)])).toEqual([]);
   });
 
-  it("reads around empty spots, between disagreeing ones, and early on (Odd Journey S1E7)", () => {
+  it("reads around empty spots, between disagreeing ones, and early on", () => {
     const found = { duration: 1430000, windows: [w(214000), w(456000), w(712000), w(968000), w(1210000)] };
     const starts = refinementStarts(found, [a(712000, 2810), a(968000, 2935), a(1210000, 2920)]);
     expect(starts.length).toBeGreaterThan(2);

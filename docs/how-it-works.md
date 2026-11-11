@@ -12,11 +12,12 @@ player -> AIOStreams -> AIOSubtitles -> SubSource, SubDL, OpenSubtitles, Subtitl
 - Requests use an IMDb id (`tt…:season:episode`) or a Kitsu id (`kitsu:1000:13`). Kitsu ids are mapped to IMDb with the Anime Kitsu addon's metadata.
 - SubSource records are tried in order: the requested season, the whole-series record (season 0), then season 1. Anime is often filed on the whole series. When SubSource has none of those, another season's record is searched, and from it only a subtitle whose name spells out the requested season and episode (`S02E17`) is taken: its plain episode numbers count from its own season.
 - A subtitle whose name gives a season ("Season 5 Ep 17") is for that season only, unless it says season 1 and its number is the episode counted across the whole show.
-- Episodes are matched by `S01E13` markers, packs named like `Ep101-170` (by absolute episode), or a bare number such as `Iron Lantern - 013 [720p]`. Resolutions, years, CRCs and season numbers are ignored. The absolute episode comes from Cinemeta's season sizes.
-- **Dub captions** must be tagged as such: `Dubbed Version`, `Eng Dub`, `English Dub` or `dub version`.
+- From a source that searched for the episode itself (SubDL, OpenSubtitles, added addons), a name giving season 1 and the episode's number is still taken for a later season (anime sequels are often released as their own `S01`), but a name spelling out the season asked for ranks above it.
+- Episodes are matched by `S01E13` markers, packs named like `Ep101-170` (by absolute episode), or a bare number such as `Show - 013 [720p]`. Resolutions, years, CRCs and season numbers are ignored. The absolute episode comes from Cinemeta's season sizes.
+- **Dub captions** must be tagged as such: `Dubbed Version`, `Eng Dub`, `English Dub` or `dub version`. At most 3 dub caption tracks are listed; the ones further down stand behind them as fallbacks.
 - **Regular English** is a language of its own (`English Subtitles` in a link's settings; `English` there means the dub captions). It's ranked like any other language, and subtitles tagged as dub captions are left out of it.
-- **English CC fallback:** when nothing is tagged as dub captions, an official English hearing-impaired track (Netflix and the like) is served as **English CC**. On streaming services, the English CC of a dubbed show usually transcribes the dub.
-- Season packs are unzipped. A pack whose only file names another episode is refused for other episodes. A file that covers a run of three or more episodes (`EP1-EP9 en.srt`, the subtitle of a compilation video) is never taken for one of them.
+- **English CC fallback:** when nothing is tagged as dub captions, an official English hearing-impaired track (Netflix and the like) is served as **English CC**. On streaming services, the English CC of a dubbed show usually transcribes the dub. One is listed, with the other official ones as its fallbacks.
+- Season packs are unzipped. A pack whose only file names another episode is refused for other episodes, and a season's number in a file name (`S02E01`) is never read as the episode number. Dub captions in a pack known not to hold the episode don't count as dub captions for it, so the English CC and regular English fallbacks get their turn. A file that covers a run of three or more episodes (`EP1-EP9 en.srt`, the subtitle of a compilation video) is never taken for one of them.
 - **No empty tracks:** with a file playing, each listed pack is opened while the list is made (within the list's own time limit); one that lacks the episode gives its place to the next subtitle in line. A download that can't be had the same way sends the next subtitle in line instead of nothing.
 
 ### Ranking
@@ -24,7 +25,7 @@ player -> AIOStreams -> AIOSubtitles -> SubSource, SubDL, OpenSubtitles, Subtitl
 - Machine and AI translations are dropped, whether the source's type tag says so or the notes do (ChatGPT, DeepL, Google Translate and the like), unless the link allows them. When allowed, they rank below every other subtitle of the same language.
 - The rest are ranked: official (retail, or notes naming Crunchyroll, Netflix and the like), then human (translated or improved, or credited to a team), then unknown.
 - Within a tier, subtitles made for the playing release come first, then ratings, then downloads. The release match compares the filename's release group (+3), streaming service (+2) and source (+1) with the subtitle's release names and notes; a different service or source counts -1. SubsPlease, Erai-raws and HorribleSubs count as Crunchyroll.
-- UTF-16 files are converted to UTF-8. Other non-UTF-8 files are decoded with the language's Windows code page (1256 for Arabic).
+- UTF-16 files are converted to UTF-8. Other non-UTF-8 files are decoded with the language's usual code page: Windows' (1256 for Arabic, 1250 for Central European languages, 1257 Baltic, 874 Thai, 1258 Vietnamese), GBK or Big5 for Chinese, Shift JIS for Japanese, EUC-KR for Korean, else 1252.
 
 ### Sources
 
@@ -44,7 +45,7 @@ player -> AIOStreams -> AIOSubtitles -> SubSource, SubDL, OpenSubtitles, Subtitl
 3b. ffmpeg reads 40 s at 5 points (15, 32, 50, 68 and 85% into the file), jumping there with the file's index. Heavy files get shorter windows, down to 20 s (about 60 MB each), so a 2160p remux is read in time.
 4. A track with under half as many lines per minute as the subtitle (an unlabelled signs track) is skipped. If the first track doesn't fit, the next one is tried; speech in the audio comes only after every track.
 5. At each point, the shift (within ±20 s) is found where the subtitle best covers the file's own lines, along with any other shift that fits nearly as well. The points are then walked in order, and the run of fits that scores best in total is taken, where each change of shift from one point to the next costs something. A chance fit off on its own is passed over, and a real change, which holds in every point after it, is followed. A point that still disagrees with all the others by more than 1.5 s is ignored.
-6. If the points agree within 0.5 s, the median shift is used. Otherwise the shift changes at the pause between the disagreeing points where the most lines fit.
+6. If the points agree within 0.5 s, the median shift is used. Otherwise the shift changes at the pause between two neighbouring points that disagree by over 0.5 s, where the most lines fit, and each stretch between such changes takes the median shift of its own points.
 
 ### Timing that changes mid-episode
 
@@ -85,7 +86,13 @@ It is used only when the pairing is beyond doubt: at least 60 lines on each side
 
 ## Responding in time
 
-AIOStreams waits 7 s for subtitles. Every source is searched at once, and the list is answered within 4 s with whatever has arrived; slower searches continue and are cached for the next request. Sync starts when the list is requested. A download never takes more than 8 s: it waits up to 5 s for the sync, then gets the timing from the first pass, or the original file. Either stand-in isn't cached, so the next request gets the finished sync. Players give up on a subtitle that takes about 10 s and show nothing.
+AIOStreams waits 7 s for subtitles. Every source is searched at once and waited on by itself, and the list is answered within 4 s with whatever has arrived; slower searches continue and are cached for the next request. A source that fails (SubSource refusing a key, say) is left out of that list, and noted on the dashboard. A list missing a source that was late is sent with a 30-second cache instead of 5 minutes.
+
+Sync starts when the list is requested. On a file timed by its own subtitle track, the list waits for the syncs within those 4 s, so the first list already says which tracks synced and can list a fallback in place of a subtitle that doesn't fit. A list whose syncs weren't all finished in time is also sent with a 30-second cache.
+
+A download never takes more than 8 s from the moment it's asked for, fetching the subtitle and trying fallbacks included: it waits up to 5 s for the sync, then gets the timing from the first pass, or the original file. Either stand-in isn't cached, so the next request gets the finished sync. Players give up on a subtitle that takes about 10 s and show nothing.
+
+SubDL allows a key 50 downloads a day. Once a key is down to its last 10, a list no longer downloads new SubDL subtitles to sync ahead (a list may be for an episode nobody plays): those are kept for subtitles a player asks for.
 
 At most 6 ffprobe/ffmpeg processes run at once across all users.
 

@@ -116,6 +116,12 @@ export function count(name: string, n = 1, link: string | undefined = /^(api|fet
   dirty = true;
 }
 
+/** Downloads made with a key so far today (UTC day, as SubDL counts them). */
+export function downloadsToday(service: string, key: string): number {
+  rollover();
+  return today.keys?.[keyId(service, key)]?.downloads ?? 0;
+}
+
 /** Today's total for a counter so far. */
 export function countedToday(name: string): number {
   rollover();

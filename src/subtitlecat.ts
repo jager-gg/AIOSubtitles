@@ -27,7 +27,7 @@ const DAY = 24 * 60 * 60;
 
 /** A row of the search page. */
 export interface CatRow {
-  /** "subs/853/Starfall_S2_17%2833%29.html" */
+  /** "subs/853/Show_S2_17%2833%29.html" */
   page: string;
   name: string;
   /** The upload's language, lower case, when the row says "(translated from English)". */
@@ -81,8 +81,8 @@ export function releaseForm(name: string): string {
 /**
  * Whether an upload's name is this title and this episode (or this film). The title's words must
  * stand together, with nothing before them but an episode marker, and nothing between them and the
- * episode number but words like "season": "Silver Fox S02E17" isn't "Silver", and "Starfall the Women"
- * isn't "The Starfall". The episode itself is judged as for any release name.
+ * episode number but words like "season": "Show Girl S02E17" isn't "Show", and "Show the Women"
+ * isn't "The Show". The episode itself is judged as for any release name.
  */
 export function nameFits(name: string, title: string, request: StremioSubtitleRequest, year?: number): boolean {
   const form = releaseForm(name);
@@ -103,8 +103,8 @@ export function nameFits(name: string, title: string, request: StremioSubtitleRe
     return next === undefined || FILM_TAG.test(next);
   }
   // A name that says "Episode 9" is that episode, whatever other numbers it carries ("... Episode 9
-  // No Sub 2"), and a number between the title and that word belongs to the title ("Spirit Realm 2 -
-  // The Unrivaled Jade Sect Episode 100" is another show), unless it follows "season" or "part".
+  // No Sub 2"), and a number between the title and that word belongs to the title ("Show 2 - The
+  // Next Chapter Episode 100" is another show), unless it follows "season" or "part".
   const said = after.findIndex((t, i) => /^(?:episode|ep|e)$/.test(t) && /^\d{1,4}$/.test(after[i + 1] ?? ""));
   if (said >= 0) {
     for (let i = 0; i < said; i++) {
@@ -181,8 +181,8 @@ const COMMON: Record<string, string[]> = {
 
 /**
  * Whether a subtitle's text is written in the language it is listed under. The site names an
- * upload's language itself and gets it wrong: an upload listed as English held Chinese text (Crimson
- * Sage 141), and timing alone can't tell, so it could have synced and been served as
+ * upload's language itself and gets it wrong: an upload listed as English held Chinese text, and
+ * timing alone can't tell, so it could have synced and been served as
  * English. Checked by writing system, and for English and Dutch by how many of the words are the
  * language's commonest ones (about a third in real dialogue, a few in a hundred in another language).
  */

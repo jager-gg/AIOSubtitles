@@ -36,31 +36,31 @@ describe("machine translations, when a link allows them", () => {
 });
 
 describe("a subtitle that names another season", () => {
-  const starfall = (subtitleId: number, episode: string, extra: Partial<SubSourceSubtitle> = {}) =>
-    sub({ subtitleId, releaseInfo: [`The Starfall Season 5 (Original Name, Other Name) Ep ${episode}`], commentary: "FanSubs", ...extra });
+  const show = (subtitleId: number, episode: string, extra: Partial<SubSourceSubtitle> = {}) =>
+    sub({ subtitleId, releaseInfo: [`Show Season 5 (Original Name, Other Name) Ep ${episode}`], commentary: "FanSubs", ...extra });
 
   it("isn't taken for the same episode number of the season asked for", () => {
     // SubSource has this show's season 5 only; season 2's episode 17 is the 33rd of the show.
-    const listed = [starfall(3206201, "17", { recordSeason: 5 }), starfall(3288550, "33", { recordSeason: 5 })];
+    const listed = [show(3206201, "17", { recordSeason: 5 }), show(3288550, "33", { recordSeason: 5 })];
     expect(filterAndRankDubtitles(listed, episodeOf(2, 17, 33), { requireDub: false })).toEqual([]);
     // The name alone is enough, whichever record it was listed under.
-    expect(filterAndRankDubtitles([starfall(3206201, "17")], episodeOf(2, 17, 33), { requireDub: false })).toEqual([]);
+    expect(filterAndRankDubtitles([show(3206201, "17")], episodeOf(2, 17, 33), { requireDub: false })).toEqual([]);
   });
 
   it("is still taken for its own season, and a name spelling out the episode is taken from any record", () => {
-    expect(filterAndRankDubtitles([starfall(3206201, "17", { recordSeason: 5 })], episodeOf(5, 17, 87), { requireDub: false }).map((s) => s.subtitleId)).toEqual([3206201]);
-    const spelled = sub({ subtitleId: 7, releaseInfo: ["The.Starfall.S02E17.1080p.WEB-DL"], recordSeason: 5 });
+    expect(filterAndRankDubtitles([show(3206201, "17", { recordSeason: 5 })], episodeOf(5, 17, 87), { requireDub: false }).map((s) => s.subtitleId)).toEqual([3206201]);
+    const spelled = sub({ subtitleId: 7, releaseInfo: ["Show.S02E17.1080p.WEB-DL"], recordSeason: 5 });
     expect(filterAndRankDubtitles([spelled], episodeOf(2, 17, 33), { requireDub: false }).map((s) => s.subtitleId)).toEqual([7]);
   });
 
   it("leaves bare numbers alone when no season is named or the record is the whole show's", () => {
-    const bare = sub({ subtitleId: 8, releaseInfo: ["Iron Lantern - 013 [720p]"], recordSeason: 0 });
+    const bare = sub({ subtitleId: 8, releaseInfo: ["Show - 013 [720p]"], recordSeason: 0 });
     expect(filterAndRankDubtitles([bare], episodeOf(1, 13), { requireDub: false }).map((s) => s.subtitleId)).toEqual([8]);
     // Counting across the whole show under a "Season 1" name.
-    const across = sub({ subtitleId: 9, releaseInfo: ["Iron Lantern Season 1 - 113"], recordSeason: 1 });
+    const across = sub({ subtitleId: 9, releaseInfo: ["Show Season 1 - 113"], recordSeason: 1 });
     expect(filterAndRankDubtitles([across], episodeOf(3, 11, 113), { requireDub: false }).map((s) => s.subtitleId)).toEqual([9]);
     // A numbered file with no season in its name, listed under another season's record.
-    const stray = sub({ subtitleId: 10, releaseInfo: ["The Starfall Ep 17"], recordSeason: 5 });
+    const stray = sub({ subtitleId: 10, releaseInfo: ["Show Ep 17"], recordSeason: 5 });
     expect(filterAndRankDubtitles([stray], episodeOf(2, 17, 33), { requireDub: false })).toEqual([]);
   });
 });
@@ -76,8 +76,8 @@ describe("dub tags", () => {
 
   it.each([
     "Dubbed Version",
-    "iron lantern Ep1-100 closed caption for dub version",
-    "Wall Breakers Season 1 2013 English Dub Subtitles",
+    "show Ep1-100 closed caption for dub version",
+    "Show Season 1 2013 English Dub Subtitles",
     "Storm Ninja Eng Dub Eng Sub Ep 141"
   ])("%s is a looser dub tag", (tag) => {
     expect(dubtitlePhraseScore(tag)).toBe(1);
@@ -114,21 +114,21 @@ describe("which subtitles fit the episode", () => {
   });
 
   it("finds an episode's file in a pack by its number alone", () => {
-    expect(bareEpisodeMarkerMatches("Wall Breakers - 01v2 (BD 1080p English Dubbed).ass", 1)).toBe(true);
-    expect(bareEpisodeMarkerMatches("Wall Breakers - 02 (BD 1080p English Dubbed).ass", 1)).toBe(false);
+    expect(bareEpisodeMarkerMatches("Show - 01v2 (BD 1080p English Dubbed).ass", 1)).toBe(true);
+    expect(bareEpisodeMarkerMatches("Show - 02 (BD 1080p English Dubbed).ass", 1)).toBe(false);
   });
 
   it("reads bare episode numbers but not resolutions, years, seasons or CRCs", () => {
-    expect(bareNumbers("[HorribleSubs] Iron Lantern - 13 [720p]")).toEqual([13]);
-    expect(bareNumbers("Iron Lantern 013 (BD 1080p HEVC Opus) [8046D0BE]")).toEqual([13]);
-    expect(bareNumbers("Iron Lantern (2017) Season 2 Ep 5 x265 10bit")).toEqual([5]);
+    expect(bareNumbers("[HorribleSubs] Show - 13 [720p]")).toEqual([13]);
+    expect(bareNumbers("Show 013 (BD 1080p HEVC Opus) [8046D0BE]")).toEqual([13]);
+    expect(bareNumbers("Show (2017) Season 2 Ep 5 x265 10bit")).toEqual([5]);
   });
 
   it("ranks every subtitle for the episode when no dub tag is required", () => {
     const subs = [
-      sub({ subtitleId: 1, releaseInfo: ["[HorribleSubs] Iron Lantern - 12 [720p]"] }),
-      sub({ subtitleId: 2, releaseInfo: ["[HorribleSubs] Iron Lantern - 13 [720p]"] }),
-      sub({ subtitleId: 3, releaseInfo: ["Iron Lantern 13 [1080p]"], rating: { total: 5 } })
+      sub({ subtitleId: 1, releaseInfo: ["[HorribleSubs] Show - 12 [720p]"] }),
+      sub({ subtitleId: 2, releaseInfo: ["[HorribleSubs] Show - 13 [720p]"] }),
+      sub({ subtitleId: 3, releaseInfo: ["Show 13 [1080p]"], rating: { total: 5 } })
     ];
     expect(rankedIds(subs, episodeOf(1, 13, 13), { requireDub: false })).toEqual([3, 2]);
   });
@@ -145,6 +145,45 @@ describe("dub caption packs numbered across seasons", () => {
   });
 
   it("uses the episode itself when there is no absolute number", () => {
-    expect(rankedIds(packs("iron lantern ", [["Ep1-100", 100], ["Ep101-170", 70]]), episodeOf(1, 120, 120))).toEqual([2]);
+    expect(rankedIds(packs("show ", [["Ep1-100", 100], ["Ep101-170", 70]]), episodeOf(1, 120, 120))).toEqual([2]);
+  });
+});
+
+describe("season and episode written together", () => {
+  it("ends a number where its digits do", async () => {
+    const { episodeMarkerMatches } = await import("../src/matching.js");
+    expect(episodeMarkerMatches("Show.S01E03.1080p.srt", 1, 3)).toBe(true);
+    expect(episodeMarkerMatches("Show.S01E30.1080p.srt", 1, 3)).toBe(false);
+    expect(episodeMarkerMatches("Show S01E13", 1, 1)).toBe(false);
+    expect(episodeMarkerMatches("Show S10E03", 1, 3)).toBe(false);
+    expect(episodeMarkerMatches("Show S01E003", 1, 3)).toBe(true);
+    expect(episodeMarkerMatches("Show S1E3v2", 1, 3)).toBe(true);
+    expect(episodeMarkerMatches("Show E03 S01", 1, 3)).toBe(true);
+    expect(episodeMarkerMatches("Show 1x03", 1, 3)).toBe(true);
+    expect(episodeMarkerMatches("Show 1x30", 1, 3)).toBe(false);
+  });
+});
+
+describe("a name giving another season, from a source that searched for this episode", () => {
+  const trusted = (id: number, name: string, extra: Partial<SubSourceSubtitle> = {}) => sub({ subtitleId: id, language: "arabic", releaseInfo: [name], episodeTrusted: true, ...extra });
+
+  it("is still taken (a sequel released as its own S01), but below one naming this season", () => {
+    const seasonOne = trusted(1, "Show.S01E05.1080p.WEB", { commentary: "Netflix", downloads: 900 });
+    const thisSeason = trusted(2, "Show.S03E05.1080p.WEB");
+    const ranked = filterAndRankDubtitles([seasonOne, thisSeason], episodeOf(3, 5, 29), { requireDub: false });
+    expect(ranked.map((s) => s.subtitleId)).toEqual([2, 1]);
+    expect(ranked[1].otherSeason).toBe(true);
+    expect(filterAndRankDubtitles([seasonOne], episodeOf(3, 5, 29), { requireDub: false }).map((s) => s.subtitleId)).toEqual([1]);
+  });
+
+  it("isn't marked when it counts the episode across the show, or when season 1 is the one asked for", () => {
+    const counted = trusted(3, "Show.S01E29.1080p.WEB");
+    expect(filterAndRankDubtitles([counted], episodeOf(3, 5, 29), { requireDub: false })[0].otherSeason).toBeUndefined();
+    const first = trusted(4, "Show.S01E05.1080p.WEB");
+    expect(filterAndRankDubtitles([first], episodeOf(1, 5, 5), { requireDub: false })[0].otherSeason).toBeUndefined();
+  });
+
+  it("from a source that didn't search for the episode, is refused as before", () => {
+    expect(filterAndRankDubtitles([sub({ releaseInfo: ["Show.S01E05.1080p.WEB"], language: "arabic" })], episodeOf(3, 5, 29), { requireDub: false })).toEqual([]);
   });
 });

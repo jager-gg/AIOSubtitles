@@ -5,21 +5,21 @@ import type { StremioSubtitleRequest } from "../src/types.js";
 const episode = (season: number, ep: number, absoluteEpisode?: number): StremioSubtitleRequest => ({ type: "series", id: `tt1:${season}:${ep}`, imdbId: "tt1", season, episode: ep, absoluteEpisode });
 const film: StremioSubtitleRequest = { type: "movie", id: "tt2", imdbId: "tt2" };
 
-const SEARCH = `<tbody> <tr> <td><a href="subs/853/Starfall_S2_17%2833%29.html">Starfall_S2_17(33)</a> (translated from English)</td>
+const SEARCH = `<tbody> <tr> <td><a href="subs/853/Show_S2_17%2833%29.html">Show_S2_17(33)</a> (translated from English)</td>
 <td class="sub-table__stars">&nbsp;</td></tr>
-<tr> <td><a href="subs/853/Starfall_S2_01%2817%29.html">Starfall_S2_01(17)</a> (translated from English)</td><td></td></tr>
+<tr> <td><a href="subs/853/Show_S2_01%2817%29.html">Show_S2_01(17)</a> (translated from English)</td><td></td></tr>
 <tr> <td><a href="subs/12/Tom%20%26%20Jerry.html">Tom &amp; Jerry</a></td><td></td></tr></tbody>`;
 
-const PAGE = `<div class="sub-single"> <span>Afrikaans</span> <span><button id="af" onclick="translate_from_server_folder('af', 'Starfall_S2_17(33)-orig.srt', '/subs/853/')" class="yellow-link">Translate</button></span> </div>
-<div class="sub-single"> <span><img src="/assets/flags/ae.png" alt="ar" class="flag"></span> <span>Arabic</span> <span><a id="download_ar" onclick="log_download(8537079); show_voting('ar');" href="/subs/853/Starfall_S2_17(33)-ar.srt" class="green-link">Download</a></span></div>
-<div class="sub-single"> <span>English</span> <span><a id="download_en" onclick="log_download(9412796);" href="/subs/941/Starfall_S2_17(33)-en.srt" class="green-link">Download</a></span></div>
-<div class="sub-single"> <span>Chinese</span> <span><a id="download_zh-CN" href="/subs/950/Starfall_S2_17(33)-zh-CN.srt" class="green-link">Download</a></span></div>`;
+const PAGE = `<div class="sub-single"> <span>Afrikaans</span> <span><button id="af" onclick="translate_from_server_folder('af', 'Show_S2_17(33)-orig.srt', '/subs/853/')" class="yellow-link">Translate</button></span> </div>
+<div class="sub-single"> <span><img src="/assets/flags/ae.png" alt="ar" class="flag"></span> <span>Arabic</span> <span><a id="download_ar" onclick="log_download(8537079); show_voting('ar');" href="/subs/853/Show_S2_17(33)-ar.srt" class="green-link">Download</a></span></div>
+<div class="sub-single"> <span>English</span> <span><a id="download_en" onclick="log_download(9412796);" href="/subs/941/Show_S2_17(33)-en.srt" class="green-link">Download</a></span></div>
+<div class="sub-single"> <span>Chinese</span> <span><a id="download_zh-CN" href="/subs/950/Show_S2_17(33)-zh-CN.srt" class="green-link">Download</a></span></div>`;
 
 describe("Subtitle Cat's pages", () => {
   it("reads the uploads off a search page, with the language each was uploaded in", () => {
     expect(parseSearch(SEARCH)).toEqual([
-      { page: "subs/853/Starfall_S2_17%2833%29.html", name: "Starfall_S2_17(33)", from: "english" },
-      { page: "subs/853/Starfall_S2_01%2817%29.html", name: "Starfall_S2_01(17)", from: "english" },
+      { page: "subs/853/Show_S2_17%2833%29.html", name: "Show_S2_17(33)", from: "english" },
+      { page: "subs/853/Show_S2_01%2817%29.html", name: "Show_S2_01(17)", from: "english" },
       { page: "subs/12/Tom%20%26%20Jerry.html", name: "Tom & Jerry" }
     ]);
     expect(parseSearch("<html>nothing here</html>")).toEqual([]);
@@ -27,20 +27,20 @@ describe("Subtitle Cat's pages", () => {
 
   it("reads the upload and its translations off an upload's page", () => {
     expect(parsePage(PAGE)).toEqual({
-      original: "/subs/853/Starfall_S2_17(33)-orig.srt",
+      original: "/subs/853/Show_S2_17(33)-orig.srt",
       files: [
-        { code: "ar", path: "/subs/853/Starfall_S2_17(33)-ar.srt" },
-        { code: "en", path: "/subs/941/Starfall_S2_17(33)-en.srt" },
-        { code: "zh-CN", path: "/subs/950/Starfall_S2_17(33)-zh-CN.srt" }
+        { code: "ar", path: "/subs/853/Show_S2_17(33)-ar.srt" },
+        { code: "en", path: "/subs/941/Show_S2_17(33)-en.srt" },
+        { code: "zh-CN", path: "/subs/950/Show_S2_17(33)-zh-CN.srt" }
       ]
     });
     expect(parsePage("<html></html>")).toEqual({ files: [] });
   });
 
   it("asks for the title with the episode number, the number across the show, and SxxEyy", () => {
-    expect(searches("The Starfall", episode(2, 17, 33))).toEqual(["starfall 17", "starfall 33", "starfall S02E17"]);
-    expect(searches("Crimson Sage", episode(1, 141, 141))).toEqual(["crimson sage 141", "crimson sage S01E141"]);
-    expect(searches("Echo of the Valley", film, 2026)).toEqual(["echo of the valley 2026", "echo of the valley"]);
+    expect(searches("The Show", episode(2, 17, 33))).toEqual(["show 17", "show 33", "show S02E17"]);
+    expect(searches("Two Words", episode(1, 141, 141))).toEqual(["two words 141", "two words S01E141"]);
+    expect(searches("Film of the Day", film, 2026)).toEqual(["film of the day 2026", "film of the day"]);
   });
 });
 
@@ -77,51 +77,51 @@ ${l}
 
 describe("whether an upload's name is the title and episode asked for", () => {
   it("spells the season-then-number forms as SxxEyy", () => {
-    expect(releaseForm("Starfall_S2_17(33)")).toBe("Starfall S2E17 33");
-    expect(releaseForm("S01 EP02 - The Quiet Days of the Jade Scholar [720p] @uploader")).toBe("S01E2 - The Quiet Days of the Jade Scholar");
+    expect(releaseForm("Show_S2_17(33)")).toBe("Show S2E17 33");
+    expect(releaseForm("S01 EP02 - The Long Name of a Show [720p] @uploader")).toBe("S01E2 - The Long Name of a Show");
     expect(releaseForm("[SubtitleTools.com] climb across  the mountains S02 E002-en")).toBe("climb across the mountains S02E2-en");
-    expect(releaseForm("subsite.com. Songs of Rivers and Stars EP 9 Eng Sub 1080p.eng")).toBe("Songs of Rivers and Stars EP 9 Eng Sub 1080p eng");
+    expect(releaseForm("subsite.com. Another Long Show EP 9 Eng Sub 1080p.eng")).toBe("Another Long Show EP 9 Eng Sub 1080p eng");
   });
 
   it("takes the episode, by its season and number or by its number across the show", () => {
-    expect(nameFits("Starfall_S2_17(33)", "The Starfall", episode(2, 17, 33))).toBe(true);
-    expect(nameFits("[Moon_Hall] Starfall_S4_12(70)_4K", "The Starfall", episode(4, 12, 70))).toBe(true);
-    expect(nameFits("Crimson Sage 141", "Crimson Sage", episode(1, 141, 141))).toBe(true);
-    expect(nameFits("S01 EP02 - The Quiet Days of the Jade Scholar [720p] @uploader", "The Quiet Days of the Jade Scholar", episode(1, 2))).toBe(true);
+    expect(nameFits("Show_S2_17(33)", "The Show", episode(2, 17, 33))).toBe(true);
+    expect(nameFits("[Group] Show_S4_12(70)_4K", "The Show", episode(4, 12, 70))).toBe(true);
+    expect(nameFits("Two Words 141", "Two Words", episode(1, 141, 141))).toBe(true);
+    expect(nameFits("S01 EP02 - The Long Name of a Show [720p] @uploader", "The Long Name of a Show", episode(1, 2))).toBe(true);
     expect(nameFits("[SubtitleTools.com] climb across  the mountains S02 E002-en", "Climb Across the Mountains", episode(2, 2, 14))).toBe(true);
-    expect(nameFits("subsite.com. Songs of Rivers and Stars EP 9 Eng Sub 1080p.eng", "Songs of Rivers and Stars", episode(1, 9))).toBe(true);
+    expect(nameFits("subsite.com. Another Long Show EP 9 Eng Sub 1080p.eng", "Another Long Show", episode(1, 9))).toBe(true);
   });
 
   it("refuses another episode, however its numbers read", () => {
     // Season 2's first episode, the show's 17th: not season 2's 17th.
-    expect(nameFits("Starfall_S2_01(17)", "The Starfall", episode(2, 17, 33))).toBe(false);
-    expect(nameFits("Starfall_S3_17(55)", "The Starfall", episode(2, 17, 33))).toBe(false);
-    expect(nameFits("Crimson Sage 141", "Crimson Sage", episode(1, 14, 14))).toBe(false);
+    expect(nameFits("Show_S2_01(17)", "The Show", episode(2, 17, 33))).toBe(false);
+    expect(nameFits("Show_S3_17(55)", "The Show", episode(2, 17, 33))).toBe(false);
+    expect(nameFits("Two Words 141", "Two Words", episode(1, 14, 14))).toBe(false);
     // "Episode 9" decides, not the 2 at the end.
-    expect(nameFits("The Quiet Days of the Jade Scholar Episode 9 No Sub 2", "The Quiet Days of the Jade Scholar", episode(1, 2))).toBe(false);
-    expect(nameFits("The Quiet Days of the Jade Scholar Episode 9 No Sub 2", "The Quiet Days of the Jade Scholar", episode(1, 9))).toBe(true);
-    expect(nameFits("Starfall Season 4 Episode 12", "The Starfall", episode(4, 12, 70))).toBe(true);
-    expect(nameFits("Starfall Season 4 Episode 12", "The Starfall", episode(2, 12, 28))).toBe(false);
-    expect(nameFits("Starfall Episode 70", "The Starfall", episode(4, 12, 70))).toBe(true);
+    expect(nameFits("The Long Name of a Show Episode 9 No Sub 2", "The Long Name of a Show", episode(1, 2))).toBe(false);
+    expect(nameFits("The Long Name of a Show Episode 9 No Sub 2", "The Long Name of a Show", episode(1, 9))).toBe(true);
+    expect(nameFits("Show Season 4 Episode 12", "The Show", episode(4, 12, 70))).toBe(true);
+    expect(nameFits("Show Season 4 Episode 12", "The Show", episode(2, 12, 28))).toBe(false);
+    expect(nameFits("Show Episode 70", "The Show", episode(4, 12, 70))).toBe(true);
   });
 
   it("refuses another title that shares the words", () => {
-    expect(nameFits("Silver Fox S02E17", "Silver", episode(2, 17))).toBe(false);
-    expect(nameFits("Starfall the Women.1951.DVDRip.x264-sk", "The Starfall", episode(2, 17, 33))).toBe(false);
-    expect(nameFits("Starfall Ho the Wagons! (1956)", "The Starfall", episode(2, 17, 33))).toBe(false);
+    expect(nameFits("Show Girl S02E17", "Show", episode(2, 17))).toBe(false);
+    expect(nameFits("Show the Women.1951.DVDRip.x264-GRP", "The Show", episode(2, 17, 33))).toBe(false);
+    expect(nameFits("Show Ho the Wagons! (1956)", "The Show", episode(2, 17, 33))).toBe(false);
     expect(nameFits("Some Author - Endless Sky Side Story.zh", "Endless Sky", episode(1, 1))).toBe(false);
     expect(nameFits("The New Endless Sky 01", "Endless Sky", episode(1, 1))).toBe(false);
-    expect(nameFits("Something Else S02E17", "The Starfall", episode(2, 17))).toBe(false);
+    expect(nameFits("Something Else S02E17", "The Show", episode(2, 17))).toBe(false);
     // A number after the title is part of another title.
-    expect(nameFits("Spirit Realm 2- The Unrivaled Jade Sect Episode 100", "Spirit Realm", episode(1, 100, 100))).toBe(false);
-    expect(nameFits("Spirit Realm 2 The Unrivaled Jade Clan EP163 Streaming Guide", "Spirit Realm", episode(1, 163, 163))).toBe(false);
+    expect(nameFits("Show 2- The Next Chapter Episode 100", "Show", episode(1, 100, 100))).toBe(false);
+    expect(nameFits("Show 2 The Next Clan EP163 Streaming Guide", "Show", episode(1, 163, 163))).toBe(false);
   });
 
   it("takes a film by its title, and its year when the name gives one", () => {
-    expect(nameFits("Echo.of.the.Valley.2026.1080p.WEB-DL", "Echo of the Valley", film, 2026)).toBe(true);
-    expect(nameFits("Echo of the Valley", "Echo of the Valley", film, 2026)).toBe(true);
-    expect(nameFits("Echo of the Valley (1998) DVDRip", "Echo of the Valley", film, 2026)).toBe(false);
-    expect(nameFits("Echo of the Valley Within 2026", "Echo of the Valley", film, 2026)).toBe(false);
-    expect(nameFits("Starfall the Women.1951.DVDRip.x264-sk", "Starfall", film, 2020)).toBe(false);
+    expect(nameFits("Film.of.the.Day.2026.1080p.WEB-DL", "Film of the Day", film, 2026)).toBe(true);
+    expect(nameFits("Film of the Day", "Film of the Day", film, 2026)).toBe(true);
+    expect(nameFits("Film of the Day (1998) DVDRip", "Film of the Day", film, 2026)).toBe(false);
+    expect(nameFits("Film of the Day Within 2026", "Film of the Day", film, 2026)).toBe(false);
+    expect(nameFits("Show the Women.1951.DVDRip.x264-GRP", "Show", film, 2020)).toBe(false);
   });
 });

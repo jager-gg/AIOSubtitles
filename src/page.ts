@@ -125,9 +125,9 @@ function featuresPanel(editing: boolean, open: boolean): string {
           <p class="hint">${editing ? "Your settings are as you left them." : "Takes about a minute."}</p>
         </div>
       </div>
-      <div class="player" role="img" aria-label="Your player's subtitle menu, showing English Dub and Spanish, synced, from AIOSubtitles">
+      <div class="player" role="img" aria-label="Your player's subtitle menu, showing English dub captions and Spanish, synced, from AIOSubtitles">
         <p class="player-title">Subtitles</p>
-        <span class="player-row on"><span class="radio"></span><span class="player-name">English Dub<small>Synced · AIOSubtitles</small></span>${icon("check", "i xs")}</span>
+        <span class="player-row on"><span class="radio"></span><span class="player-name">English<small>Dub · Synced · AIOSubtitles</small></span>${icon("check", "i xs")}</span>
         <span class="player-row"><span class="radio"></span><span class="player-name">Spanish<small>Synced · AIOSubtitles</small></span></span>
         <span class="player-row"><span class="radio"></span><span class="player-name">Off</span></span>
       </div>
@@ -140,9 +140,9 @@ function featuresPanel(editing: boolean, open: boolean): string {
   const perks = `<ul class="perks">
       ${perk("star", "Real translations first", "Official, then made by people. No machine or AI unless you allow it.")}
       ${perk("target", "Made for your copy", "Subtitles from the same group or streaming service win.")}
-      ${perk("layers", "Many sources, one pick", "SubSource, SubDL, OpenSubtitles and your own addons.")}
+      ${perk("layers", "Many sources, one pick", "SubSource, SubDL, OpenSubtitles, Subtitle Cat and your own addons.")}
       ${perk("hash", "Knows anime numbering", "Episode 113 or season 2 episode 13, season packs too.")}
-      ${perk("tag", "Honest labels", "“Synced” only when it really is.")}
+      ${perk("tag", "Honest labels", "One that can't be synced to your file says so, or is left out if you choose.")}
       ${perk("play", "Works where you watch", "Through AIOStreams, in Stremio, Jellyfin and other players.")}
     </ul>`;
   return `<section class="panel" id="panel-features" data-step="features" aria-labelledby="title-features" tabindex="-1"${open ? "" : " hidden"}>
@@ -231,7 +231,7 @@ export function configurePage(current?: Settings, signedIn = false): string {
         ${secretRow({ name: "subsource", label: "SubSource API key", placeholder: "sk_…", saved: Boolean(current?.subsource), help: 'Optional. From <a href="https://subsource.net/api" target="_blank" rel="noopener">subsource.net/api</a>.', removeLabel: "Stop using SubSource", letters: "SS" })}
         ${secretRow({ name: "subdl", label: "SubDL API key", placeholder: "Your SubDL key", saved: Boolean(current?.subdl), help: 'Optional. From <a href="https://subdl.com/panel/api" target="_blank" rel="noopener">subdl.com/panel/api</a>. Often has dub caption packs.', removeLabel: "Stop using SubDL", letters: "SD" })}
         ${switchRow("opensubtitles", "OpenSubtitles", "Through OpenSubtitles V3+. No key needed.", openSubtitlesOn, "OS")}
-        ${switchRow("subtitlecat", "Subtitle Cat", "Uploads the other sites lack, such as fan translations. Found by name, so one is listed only once it has synced to your file. No key needed.", subtitleCatOn, "SC")}`) +
+        ${switchRow("subtitlecat", "Subtitle Cat", "Uploads the other sites lack, such as fan translations. Found by name, so one is listed only once it has synced to your file. No key needed; works beside at least one other source.", subtitleCatOn, "SC")}`) +
       card("Other subtitle addons", "Optional. Any Stremio subtitle addon is asked too, and what it finds is ranked and synced.", `
         ${addonRows}
         <details class="item more"${savedAddons.length ? " open" : ""}>
@@ -818,7 +818,7 @@ ${instancesDialog}
       const pick = b.languages.find((l) => l !== "English");
       const other = pick === "${REGULAR_ENGLISH}" ? "English" : pick || "Spanish";
       const rows = [
-        b.languages.includes("English") && [b.statusInName ? "English Dub" : "English", "English Dub · Synced · AIOSubtitles"],
+        b.languages.includes("English") && [b.statusInName ? "English Dub (Synced)" : "English", "Dub · Synced · AIOSubtitles"],
         [b.statusInName ? other + " (Synced)" : other, "Synced · AIOSubtitles"]
       ].filter(Boolean);
       preview.innerHTML = rows.map(([name, label]) => '<span class="track-row">' + name.replace(/[<&]/g, "") + "<small>" + label + "</small></span>").join("");
@@ -854,7 +854,7 @@ ${instancesDialog}
   function localProblem(id, b) {
     if (id === "sync" && !present("aiostreams")) return "AIOStreams install URL: needed. Paste the install link from AIOStreams";
     if (id === "sync" && b.aiostreams && b.aiostreams !== "remove" && !/\\/manifest\\.json$/.test(b.aiostreams)) return "AIOStreams install URL: it ends in /manifest.json";
-    if (id === "sources" && !present("subsource") && !present("subdl") && !b.opensubtitles && !document.querySelectorAll("[data-addon]:not(.removing)").length && !b.addAddons.trim()) return "Sources: add a SubSource or SubDL key, turn on OpenSubtitles, or add an addon";
+    if (id === "sources" && !present("subsource") && !present("subdl") && !b.opensubtitles && !document.querySelectorAll("[data-addon]:not(.removing)").length && !b.addAddons.trim()) return "Sources: " + (b.subtitlecat ? "Subtitle Cat needs another source beside it. " : "") + "Add a SubSource or SubDL key, turn on OpenSubtitles, or add an addon";
     if (id === "languages" && !b.languages.length) return "Languages: pick at least one";
     return "";
   }

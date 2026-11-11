@@ -26,17 +26,17 @@ describe("translation quality", () => {
   it("treats credited teams and sites as human, and the rest as unknown", () => {
     expect(qualityTier(sub({ commentary: "http://home.alphantom.com/index.php/ar/ horriblesubs متوافق" }))).toBe(2);
     expect(qualityTier(sub({ productionType: "improved" }))).toBe(2);
-    expect(qualityTier(sub({ releaseInfo: ["Iron Lantern 2017 - Ep001 To Ep170"] }))).toBe(1);
+    expect(qualityTier(sub({ releaseInfo: ["Show 2017 - Ep001 To Ep170"] }))).toBe(1);
   });
 
-  it("ranks Iron Lantern E13's Arabic: official, then human, then unknown", () => {
+  it("ranks an episode's Arabic: official, then human, then unknown", () => {
     const request: StremioSubtitleRequest = { type: "series", id: "tt0000004:1:13", imdbId: "tt0000004", season: 1, episode: 13, absoluteEpisode: 13 };
     const ranked = filterAndRankDubtitles(
       [
-        sub({ subtitleId: 3187471, files: 170, downloads: 17, releaseInfo: ["Iron Lantern 2017 - Ep001 To Ep170"] }),
-        sub({ subtitleId: 1690964, downloads: 3, releaseInfo: ["[Phantom] Iron Lantern - 13"], commentary: "http://home.alphantom.com/index.php/ar/ horriblesubs متوافق" }),
-        sub({ subtitleId: 1696339, downloads: 2, releaseInfo: ["[HorribleSubs] Iron Lantern - 13 [1080p]"], commentary: "ترجمة كرانشي رول" }),
-        sub({ subtitleId: 9, downloads: 50, releaseInfo: ["Iron Lantern - 13"], commentary: "ترجمة آلية" })
+        sub({ subtitleId: 3187471, files: 170, downloads: 17, releaseInfo: ["Show 2017 - Ep001 To Ep170"] }),
+        sub({ subtitleId: 1690964, downloads: 3, releaseInfo: ["[Phantom] Show - 13"], commentary: "http://home.alphantom.com/index.php/ar/ horriblesubs متوافق" }),
+        sub({ subtitleId: 1696339, downloads: 2, releaseInfo: ["[HorribleSubs] Show - 13 [1080p]"], commentary: "ترجمة كرانشي رول" }),
+        sub({ subtitleId: 9, downloads: 50, releaseInfo: ["Show - 13"], commentary: "ترجمة آلية" })
       ],
       request,
       { requireDub: false }
@@ -50,9 +50,9 @@ describe("English CC fallback inputs (Netflix packs)", () => {
     const request: StremioSubtitleRequest = { type: "series", id: "kitsu:1001:7", imdbId: "tt0000007", season: 1, episode: 7, absoluteEpisode: 7 };
     const ranked = filterAndRankDubtitles(
       [
-        sub({ subtitleId: 2592520, language: "english", files: null, releaseInfo: ["Odd Journey"], commentary: "Rip from NETFLIX. (26 episodes - Phantom Blood", hearingImpaired: false }),
-        sub({ subtitleId: 2592513, language: "english", files: null, releaseInfo: ["Odd Journey"], commentary: "Rip from NETFLIX. (26 episodes - Phantom Blood", hearingImpaired: true }),
-        sub({ subtitleId: 1387723, language: "english", files: null, releaseInfo: ["gg Odd Journey 1-26 complete"], commentary: "http://www.ggkthx.org/", hearingImpaired: true })
+        sub({ subtitleId: 2592520, language: "english", files: null, releaseInfo: ["Show"], commentary: "Rip from NETFLIX. (26 episodes - Phantom Blood", hearingImpaired: false }),
+        sub({ subtitleId: 2592513, language: "english", files: null, releaseInfo: ["Show"], commentary: "Rip from NETFLIX. (26 episodes - Phantom Blood", hearingImpaired: true }),
+        sub({ subtitleId: 1387723, language: "english", files: null, releaseInfo: ["gg Show 1-26 complete"], commentary: "http://www.ggkthx.org/", hearingImpaired: true })
       ],
       request,
       { requireDub: false, hearingImpaired: "only" }

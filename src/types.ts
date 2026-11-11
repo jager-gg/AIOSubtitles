@@ -83,4 +83,6 @@ export interface RankedSubtitle extends SubSourceSubtitle {
   quality?: 1 | 2 | 3;
   /** A machine or AI translation, kept because the link allows them: ranked below every other. */
   machine?: boolean;
+  /** From a source that searched for this episode, but its name gives only another season: ranked below one naming this season. */
+  otherSeason?: boolean;
 }

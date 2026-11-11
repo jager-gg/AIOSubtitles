@@ -21,7 +21,7 @@ describe("other sources", () => {
     expect(languageName("ar")).toBe("arabic");
   });
 
-  it("finds SubDL's Disney+ English Dub pack as dub captions (Odd Journey S1)", () => {
+  it("finds SubDL's Disney+ English Dub pack as dub captions", () => {
     const ranked = filterAndRankDubtitles(
       [sub({ ref: "sdx", source: "subdl", files: 2, hearingImpaired: true, releaseInfo: ["Odd.Journey.S01.DSNP.English.Dub.SDH.CC.-Uploader"] })],
       request
@@ -32,8 +32,8 @@ describe("other sources", () => {
   it("trusts a source that already searched for the episode, and leaves out AI translations", () => {
     const ranked = filterAndRankDubtitles(
       [
-        sub({ ref: "osar-1", source: "opensubtitles", language: "arabic", episodeTrusted: true, releaseInfo: ["Odd Journey [Bluray] [Sh-Arab Team]"] }),
-        sub({ ref: "osar-2", source: "opensubtitles", language: "arabic", episodeTrusted: true, productionType: "machine translated", releaseInfo: ["Odd Journey S01E07"] })
+        sub({ ref: "osar-1", source: "opensubtitles", language: "arabic", episodeTrusted: true, releaseInfo: ["Show [Bluray] [Sh-Arab Team]"] }),
+        sub({ ref: "osar-2", source: "opensubtitles", language: "arabic", episodeTrusted: true, productionType: "machine translated", releaseInfo: ["Show S01E07"] })
       ],
       request,
       { requireDub: false }
@@ -59,9 +59,9 @@ describe("OpenSubtitles V3+ files and episodes", async () => {
     const req: StremioSubtitleRequest = { type: "series", id: "tt0000004:1:13", imdbId: "tt0000004", season: 1, episode: 13, absoluteEpisode: 13 };
     const ranked = filterAndRankDubtitles(
       [
-        sub({ ref: "osar-9225974", language: "arabic", episodeTrusted: true, releaseInfo: ["Iron Lantern - 113 [WEB][Crunchyroll . Zero-Kon]"] }),
-        sub({ ref: "osar-1", language: "arabic", episodeTrusted: true, releaseInfo: ["Iron Lantern - 13 [WEB]"] }),
-        sub({ ref: "osar-2", language: "arabic", episodeTrusted: true, releaseInfo: ["Iron Lantern Arabic"] })
+        sub({ ref: "osar-9225974", language: "arabic", episodeTrusted: true, releaseInfo: ["Show - 113 [WEB][Crunchyroll . Fansub]"] }),
+        sub({ ref: "osar-1", language: "arabic", episodeTrusted: true, releaseInfo: ["Show - 13 [WEB]"] }),
+        sub({ ref: "osar-2", language: "arabic", episodeTrusted: true, releaseInfo: ["Show Arabic"] })
       ],
       req,
       { requireDub: false }

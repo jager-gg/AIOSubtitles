@@ -370,7 +370,7 @@ export function statsPage(view: StatsView, signedIn = false): string {
       })}
       ${columnChart(view, {
         title: "Data per day",
-        hint: "Downloaded plus sent. Most of it is reading short windows of videos.",
+        hint: "Downloaded plus sent. Most of it is reading the videos played: their index (about 1 MB), or short windows of them.",
         value: (c) => downloaded(c) + sent(c),
         format: (v) => (v ? bytes(v) : "0"),
         time: false,
@@ -431,11 +431,12 @@ export function statsPage(view: StatsView, signedIn = false): string {
   ].join("");
 
   // ---------- sources and links ----------
-  const sources = ["subsource", "subdl", "opensubtitles", "addons"]
-    // Other addons only when someone added one.
-    .filter((source) => source !== "addons" || (weekTotal["api.addons"] ?? 0) + (weekTotal["fetch.addons"] ?? 0) + (weekTotal["errors.addons"] ?? 0) > 0)
+  const used = (source: string) => (weekTotal[`api.${source}`] ?? 0) + (weekTotal[`fetch.${source}`] ?? 0) + (weekTotal[`errors.${source}`] ?? 0) > 0;
+  const sources = ["subsource", "subdl", "opensubtitles", "subtitlecat", "addons"]
+    // Subtitle Cat (off unless a link turns it on) and other addons only when one was used this week.
+    .filter((source) => (source !== "addons" && source !== "subtitlecat") || used(source))
     .map((source) => {
-      const label = { subsource: "SubSource", subdl: "SubDL", opensubtitles: "OpenSubtitles V3+", addons: "Added addons" }[source];
+      const label = { subsource: "SubSource", subdl: "SubDL", opensubtitles: "OpenSubtitles V3+", subtitlecat: "Subtitle Cat", addons: "Added addons" }[source];
       const fails = (weekTotal[`api.${source}.fail`] ?? 0) + (weekTotal[`errors.${source}`] ?? 0);
       return `<tr><th scope="row">${label}</th><td>${n(weekTotal[`api.${source}`] ?? 0)}</td><td>${n(weekTotal[`fetch.${source}`])}</td><td${fails ? ' class="bad"' : ""}>${n(fails)}</td></tr>`;
     })
@@ -483,7 +484,7 @@ export function statsPage(view: StatsView, signedIn = false): string {
           item("ear", { include: "Hearing-impaired subtitles included", exclude: "Hearing-impaired subtitles left out", only: "Hearing-impaired subtitles only" }[set.hearingImpaired], { include: "HI included", exclude: "No HI", only: "HI only" }[set.hearingImpaired]),
           item("film", set.skipEmbedded ? "Skips languages the file already has" : "Lists languages the file already has too", set.skipEmbedded ? "Skips the file's languages" : "Lists every language"),
           ...(set.hideUnsynced ? [item("sync", "Leaves out subtitles that don't sync", "Synced only")] : []),
-          item("tag", set.statusInName ? "Status in the track name, like English Dub" : "Tracks named by language alone", set.statusInName ? "Status in names" : "Language-only names")
+          item("tag", set.statusInName ? "Status in the track name, like Arabic (Synced)" : "Tracks named by language alone", set.statusInName ? "Status in names" : "Language-only names")
         ].join("")}</ul>`
       : "";
     return `<li class="ro">
@@ -534,7 +535,7 @@ export function statsPage(view: StatsView, signedIn = false): string {
     if (e.what && !group.what) group.what = e.what;
     groups.set(key, group);
   }
-  const WHERE: Record<string, string> = { sync: "Sync", request: "Request", download: "Download", subdl: "SubDL", subsource: "SubSource", opensubtitles: "OpenSubtitles", addons: "Other addons" };
+  const WHERE: Record<string, string> = { sync: "Sync", request: "Request", download: "Download", subdl: "SubDL", subsource: "SubSource", opensubtitles: "OpenSubtitles", subtitlecat: "Subtitle Cat", addons: "Other addons" };
   const errorRow = (g: ErrorGroup) => {
     const linkIds = [...g.links];
     const facts = [

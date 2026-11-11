@@ -2,7 +2,7 @@
  * Every subtitle goes out as SRT. Download links end in "subtitle.srt" (they
  * are made before the file is fetched), and some players, Jellyfin through
  * AIOMetadata among them, go by that name: an ASS file sent that way showed
- * nothing at all (Crunchyroll's Arabic for Dr. Ember). SRT is the one format
+ * nothing at all (seen with one service's Arabic). SRT is the one format
  * every player reads. ASS styling and positioning are dropped; the words and
  * timing stay.
  */

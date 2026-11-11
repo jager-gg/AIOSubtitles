@@ -41,28 +41,28 @@ const sub = (p: Partial<SubSourceSubtitle>): SubSourceSubtitle => ({ subtitleId:
 
 describe("release match with the playing file", () => {
   it("finds the group in anime and scene names", () => {
-    expect(matching.releaseGroup("[SubsPlease] Iron Lantern - 13 (1080p) [A1B2C3D4].mkv")).toBe("subsplease");
-    expect(matching.releaseGroup("Iron.Lantern.S01E13.1080p.CR.WEB-DL.AAC2.0.H.264-VARYG.mkv")).toBe("varyg");
-    expect(matching.releaseGroup("Iron.Lantern.S01E13.1080p.WEB-DL")).toBeUndefined();
-    expect(matching.releaseGroup("Iron Lantern S01E13")).toBeUndefined();
+    expect(matching.releaseGroup("[SubsPlease] Show - 13 (1080p) [A1B2C3D4].mkv")).toBe("subsplease");
+    expect(matching.releaseGroup("Show.S01E13.1080p.CR.WEB-DL.AAC2.0.H.264-TEAM.mkv")).toBe("team");
+    expect(matching.releaseGroup("Show.S01E13.1080p.WEB-DL")).toBeUndefined();
+    expect(matching.releaseGroup("Show S01E13")).toBeUndefined();
   });
 
   it("scores group, service and source", () => {
-    const file = "Iron.Lantern.S01E13.1080p.CR.WEB-DL.AAC2.0.H.264-VARYG.mkv";
-    expect(matching.releaseMatch(sub({ releaseInfo: ["Iron.Lantern.S01E13.1080p.CR.WEB-DL.AAC2.0.H.264-VARYG"] }), file)).toBe(6);
-    expect(matching.releaseMatch(sub({ releaseInfo: ["Iron.Lantern.S01E13.1080p.NF.WEB-DL-GROUP"] }), file)).toBe(0); // other service -1, same source +1
-    expect(matching.releaseMatch(sub({ releaseInfo: ["Iron Lantern 13 BluRay"] }), file)).toBe(-1);
+    const file = "Show.S01E13.1080p.CR.WEB-DL.AAC2.0.H.264-TEAM.mkv";
+    expect(matching.releaseMatch(sub({ releaseInfo: ["Show.S01E13.1080p.CR.WEB-DL.AAC2.0.H.264-TEAM"] }), file)).toBe(6);
+    expect(matching.releaseMatch(sub({ releaseInfo: ["Show.S01E13.1080p.NF.WEB-DL-GROUP"] }), file)).toBe(0); // other service -1, same source +1
+    expect(matching.releaseMatch(sub({ releaseInfo: ["Show 13 BluRay"] }), file)).toBe(-1);
     expect(matching.releaseMatch(sub({ releaseInfo: ["anything"] }), undefined)).toBe(0);
     // SubsPlease rips Crunchyroll; underscores separate words too.
-    expect(matching.releaseMatch(sub({ releaseInfo: ["Iron_Lantern_13_[CR]"] }), "[SubsPlease] Iron Lantern - 13 (1080p).mkv")).toBe(2);
+    expect(matching.releaseMatch(sub({ releaseInfo: ["Show_13_[CR]"] }), "[SubsPlease] Show - 13 (1080p).mkv")).toBe(2);
   });
 
   it("ranks the matching release first within the same quality", () => {
-    const playing = { ...request, filename: "Iron.Lantern.S01E13.1080p.CR.WEB-DL-VARYG.mkv" };
+    const playing = { ...request, filename: "Show.S01E13.1080p.CR.WEB-DL-TEAM.mkv" };
     const ranked = matching.filterAndRankDubtitles(
       [
-        sub({ ref: "a", releaseInfo: ["Iron Lantern 13 BluRay"], downloads: 900 }),
-        sub({ ref: "b", releaseInfo: ["Iron.Lantern.S01E13.1080p.CR.WEB-DL-VARYG"], downloads: 1 })
+        sub({ ref: "a", releaseInfo: ["Show 13 BluRay"], downloads: 900 }),
+        sub({ ref: "b", releaseInfo: ["Show.S01E13.1080p.CR.WEB-DL-TEAM"], downloads: 1 })
       ],
       playing,
       { requireDub: false }
@@ -109,17 +109,17 @@ describe("added Stremio subtitle addons", () => {
   it("asks like a player, keeps wanted languages, and never keeps a URL in the clear", async () => {
     const secretLink = "https://subs.example.com/file/arabic.srt?key=addon-secret-key";
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ subtitles: [
-      { id: 1, url: secretLink, lang: "ara", label: "Iron Lantern 13 [CR]" },
+      { id: 1, url: secretLink, lang: "ara", label: "Show 13 [CR]" },
       { id: 2, url: "https://subs.example.com/file/fr.srt", lang: "fre" },
       { id: 3, url: "http://10.0.0.1/evil.srt", lang: "ara" }
     ] }), { status: 200, headers: { "content-type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);
     const addon = { name: "Test Subs", url: "https://addon.example.com/conf-with-key/manifest.json" };
-    const found = await sources.addonSubtitles(addon, { ...request, filename: "Iron Lantern - 13.mkv", videoHash: "0123456789abcdef" }, ["arabic"]);
+    const found = await sources.addonSubtitles(addon, { ...request, filename: "Show - 13.mkv", videoHash: "0123456789abcdef" }, ["arabic"]);
     const asked = String((fetchMock.mock.calls[0] as unknown[])[0]);
-    expect(asked).toBe("https://addon.example.com/conf-with-key/subtitles/series/tt0000003%3A1%3A13/filename=Iron+Lantern+-+13.mkv&videoHash=0123456789abcdef.json");
+    expect(asked).toBe("https://addon.example.com/conf-with-key/subtitles/series/tt0000003%3A1%3A13/filename=Show+-+13.mkv&videoHash=0123456789abcdef.json");
     expect(found).toHaveLength(1);
-    expect(found[0]).toMatchObject({ language: "arabic", source: "addon", releaseInfo: ["Iron Lantern 13 [CR]"] });
+    expect(found[0]).toMatchObject({ language: "arabic", source: "addon", releaseInfo: ["Show 13 [CR]"] });
     expect(JSON.stringify(found)).not.toContain("addon-secret-key");
     expect(profile.openUrl(found[0].sealedUrl as string)).toBe(secretLink);
     expect(found[0].ref).toMatch(/^cx[0-9a-f]{20}$/);
@@ -161,24 +161,24 @@ describe("what's known about a sync", () => {
 describe("season packs that hold another episode", () => {
   it("won't pass a pack's only file off as a different episode", async () => {
     const { namesAnotherEpisode } = await import("../src/downloads.js");
-    expect(namesAnotherEpisode("Iron Lantern - S01E01 (001).English[SDH].srt", 13)).toBe(true);
-    expect(namesAnotherEpisode("Iron Lantern - S01E001.English[SDH].ass", 13)).toBe(true);
-    expect(namesAnotherEpisode("Iron Lantern - S01E13.English[SDH].srt", 13)).toBe(false);
-    expect(namesAnotherEpisode("[SubsPlease] Iron Lantern - 13 (1080p).ass", 13)).toBe(false);
-    expect(namesAnotherEpisode("Iron Lantern English.srt", 13)).toBe(false);
+    expect(namesAnotherEpisode("Show - S01E01 (001).English[SDH].srt", 13)).toBe(true);
+    expect(namesAnotherEpisode("Show - S01E001.English[SDH].ass", 13)).toBe(true);
+    expect(namesAnotherEpisode("Show - S01E13.English[SDH].srt", 13)).toBe(false);
+    expect(namesAnotherEpisode("[SubsPlease] Show - 13 (1080p).ass", 13)).toBe(false);
+    expect(namesAnotherEpisode("Show English.srt", 13)).toBe(false);
   });
 
   it("doesn't count a sync built mostly from second-best fits", async () => {
     const { landsOnTiming } = await import("../src/sync.js");
     const win = (from: number, offset: number) => ({ from, measured: { offset, score: 0.9, alternatives: [] } });
     const anchor = (from: number, offset: number) => ({ from, to: from + 40000, offset, score: 0.9 });
-    // Dr. Ember S2E01, misfiled Arabic: 1 of 8 windows' own best fit on the final timing.
+    // A misfiled Arabic: 1 of 8 windows' own best fit on the final timing.
     expect(landsOnTiming([win(216e3, -19760), win(401e3, -10280), win(461e3, 16720), win(501e3, -9280), win(661e3, 1680), win(721e3, -6800), win(980e3, -19730), win(1265e3, 2320)],
       [anchor(401e3, -9520), anchor(501e3, -9280), anchor(661e3, -7800), anchor(721e3, -9400)])).toBe(false);
-    // Iron Lantern E13: 6 of 7 land on it.
+    // Show E13: 6 of 7 land on it.
     expect(landsOnTiming([win(215e3, -945), win(398e3, -1065), win(458e3, -900), win(498e3, -880), win(716e3, -1000), win(974e3, -840), win(1217e3, 14615)],
       [anchor(215e3, -945), anchor(716e3, -1000), anchor(1217e3, -980)])).toBe(true);
-    // The Analyst S3E8 English: two false readings early, then timing drifting from -0.1 to 1 s.
+    // An English subtitle: two false readings early, then timing drifting from -0.1 to 1 s.
     expect(landsOnTiming([win(379e3, 11055), win(809e3, -4130), win(1264e3, -100), win(1719e3, 200), win(2148e3, 980)],
       [anchor(379e3, 40), anchor(809e3, -25), anchor(1264e3, -100), anchor(1719e3, 200), anchor(2148e3, 320)])).toBe(true);
   });
@@ -189,14 +189,14 @@ describe("season packs that hold another episode", () => {
     // Real E13 and E14 dub captions: every window agrees.
     expect(fitsFile(at(-960, -1080, -880, -880, -1000, -840, 14600))).toBe(true);
     expect(fitsFile(at(-1160, -1150, -960, -1320, -880, -1160))).toBe(true);
-    // A timing step mid-episode (Odd Journey S1E7): windows agree on each side of it.
+    // A timing step mid-episode: windows agree on each side of it.
     expect(fitsFile(at(500, 520, 1200, 2900, 2880))).toBe(true);
     // Episode 1's captions measured against episode 13: best fits all over the place.
     expect(fitsFile(at(6560, -11760, -15880, 2120, 14800, 6760, 3400))).toBe(false);
     expect(fitsFile(at(-3440, -15360, 15280, -7880, 4760, -3240, -6600))).toBe(false);
-    // Timing that drifts a little (The Analyst S3E8 English): three windows within 1.5 s fit.
+    // Timing that drifts a little: three windows within 1.5 s fit.
     expect(fitsFile(at(11100, -4100, -100, 200, 1000))).toBe(true);
-    // The misfiled Dr. Ember Arabic (another season) still doesn't.
+    // The misfiled Show Arabic (another season) still doesn't.
     expect(fitsFile(at(14600, -17600, 20900, -13500, 4200, 1600, 18300, 13200, -10500, 800))).toBe(false);
   });
 });
@@ -233,15 +233,15 @@ describe("every subtitle goes out as SRT", () => {
     const ass = [
       "[Script Info]", "Title: x", "", "[Events]",
       "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
-      String.raw`Dialogue: 0,0:00:04.01,0:00:06.27,Main,Soyuz,0000,0000,0000,,{\i1}كـ-كاد يكتمل، صحيح؟{\i0}`,
-      String.raw`Dialogue: 0,0:00:09.44,0:00:15.41,Main,Suika,0000,0000,0000,,First line\NSecond, with a comma`,
+      String.raw`Dialogue: 0,0:00:04.01,0:00:06.27,Main,Ann,0000,0000,0000,,{\i1}مرحبا، كيف حالك؟{\i0}`,
+      String.raw`Dialogue: 0,0:00:09.44,0:00:15.41,Main,Ben,0000,0000,0000,,First line\NSecond, with a comma`,
       String.raw`Dialogue: 0,0:00:10.00,0:00:12.00,Sign,,0,0,0,,{\p1}m 0 0 l 100 0 100 100{\p0}`
     ].join("\r\n");
-    expect(toSrt(ass, ".ass")).toBe("1\n00:00:04,010 --> 00:00:06,270\nكـ-كاد يكتمل، صحيح؟\n\n2\n00:00:09,440 --> 00:00:15,410\nFirst line\nSecond, with a comma\n");
+    expect(toSrt(ass, ".ass")).toBe("1\n00:00:04,010 --> 00:00:06,270\nمرحبا، كيف حالك؟\n\n2\n00:00:09,440 --> 00:00:15,410\nFirst line\nSecond, with a comma\n");
   });
   it("turns VTT into SRT and leaves SRT alone", async () => {
     const { toSrt } = await import("../src/srt.js");
-    expect(toSrt("WEBVTT\n\n00:01.000 --> 00:02.500 align:start\n<v Senku>Ten billion percent</v>\n", ".vtt")).toBe("1\n00:00:01,000 --> 00:00:02,500\nTen billion percent\n");
+    expect(toSrt("WEBVTT\n\n00:01.000 --> 00:02.500 align:start\n<v Ann>Hello there</v>\n", ".vtt")).toBe("1\n00:00:01,000 --> 00:00:02,500\nHello there\n");
     expect(toSrt("1\n00:00:01,000 --> 00:00:02,000\nhi\n", ".srt")).toBe("1\n00:00:01,000 --> 00:00:02,000\nhi\n");
   });
 });
@@ -270,10 +270,10 @@ describe("the subtitle track to time against", () => {
 describe("finding the playing file in AIOStreams", () => {
   it("treats another version of the same release as the same file", async () => {
     const { releaseName } = await import("../src/sync.js");
-    const played = "[sam] Sora no Nikki - 01 [BD 1080p FLAC] [E55294ED].mkv";
-    expect(releaseName("[sam] Sora no Nikki - 01v2 [BD 1080p FLAC] [58719017].mkv")).toBe(releaseName(played));
-    expect(releaseName("[sam] Sora no Nikki - 02 [BD 1080p FLAC] [EF25BE70].mkv")).not.toBe(releaseName(played));
-    expect(releaseName("[MTBB] The Herbalist Notes - 01 (BD 1080p) [BA2F293F].mkv")).not.toBe(releaseName(played));
+    const played = "[Group] Show - 01 [BD 1080p FLAC] [E55294ED].mkv";
+    expect(releaseName("[Group] Show - 01v2 [BD 1080p FLAC] [58719017].mkv")).toBe(releaseName(played));
+    expect(releaseName("[Group] Show - 02 [BD 1080p FLAC] [EF25BE70].mkv")).not.toBe(releaseName(played));
+    expect(releaseName("[Other] Another Show - 01 (BD 1080p) [BA2F293F].mkv")).not.toBe(releaseName(played));
     expect(releaseName("Show.S01E01.1080p.WEB-DL.H.264-GRP")).toBe(releaseName("Show.S01E01.1080p.WEB-DL.H.264-GRP.mkv"));
   });
 });
@@ -356,7 +356,7 @@ describe("speech in the audio as the last resort", () => {
 
   it("still times captions that put two sentences in one line", async () => {
     const { bySpeech } = await import("../src/sync.js");
-    // Every other pair of lines shown as one (The Analyst's SDH track does this), while the voice
+    // Every other pair of lines shown as one (Show's SDH track does this), while the voice
     // still starts twice.
     const merged = captions.flatMap((c, i, all) => (i % 4 === 0 && all[i + 1] ? [{ start: c.start, end: all[i + 1].end }] : i % 4 === 1 ? [] : [c]));
     const found = { duration: 1_500_000, speechBy: "silero" as const, windows: [200_000, 450_000, 700_000, 950_000, 1_200_000].map((from, i) => windowAt(from, shifted(1000), 100 + i)) };

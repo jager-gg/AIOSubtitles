@@ -1,7 +1,7 @@
 /**
  * Speech in a stretch of audio, heard by Silero VAD (MIT, github.com/snakers4/silero-vad, v5.1.2,
  * assets/silero_vad.onnx) run on WebAssembly, so it works on Alpine with no native build. Loudness
- * alone can't tell speech from a laugh track or music (Room Twelve: 6 to 12 blurred bursts in
+ * alone can't tell speech from a laugh track or music (seen: 6 to 12 blurred bursts in
  * 40 s), and audio sync then refused 25 of 28 files.
  */
 import { readFile } from "node:fs/promises";

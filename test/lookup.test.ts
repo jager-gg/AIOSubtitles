@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { fileName, fileRef, lookUpStream, lookUpStreamAgain } from "../src/sync.js";
 
 const AIO = "http://aiostreams:3000/stremio/uuid/pass/manifest.json";
-const PLAYED = "Harbor.S01E07.2160p.ATVP.WEB-DL.DDPA5.1.HDR.HEVC-NTb";
+const PLAYED = "Show.S01E07.2160p.ATVP.WEB-DL.DDPA5.1.HDR.HEVC-TEAM";
 const stream = (filename: string) => ({ url: `https://debrid.example/${encodeURIComponent(filename)}`, behaviorHints: { filename } });
 const list = (...names: string[]) => new Response(JSON.stringify({ streams: names.map(stream) }), { headers: { "content-type": "application/json" } });
 
@@ -10,29 +10,29 @@ afterEach(() => vi.restoreAllMocks());
 
 describe("finding the playing file in AIOStreams", () => {
   it("finds it by name, extension or not, with one search", async () => {
-    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(list("Harbor.S01E07.720p.WEB.h264-ETHEL", `${PLAYED}.mkv`));
+    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(list("Show.S01E07.720p.WEB.h264-CREW", `${PLAYED}.mkv`));
     expect(await lookUpStream(AIO, "tt0000005:1:7", "series", PLAYED)).toBe(stream(`${PLAYED}.mkv`).url);
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(String(fetch.mock.calls[0][0])).toBe("http://aiostreams:3000/stremio/uuid/pass/stream/series/tt0000005%3A1%3A7.json");
   });
 
   it("finds nothing when failover played another file (the named one is dropped from the list)", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(list("Harbor (2023) S01E07 (2160p ATVP WEB-DL Hybrid H265 DV HDR10+ DDP Atmos 5.1 English - HONE)", "Harbor.S01E07.XviD-AFG"));
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(list("Show (2023) S01E07 (2160p ATVP WEB-DL Hybrid H265 DV HDR10+ DDP Atmos 5.1 English - SQUAD)", "Show.S01E07.XviD-CLAN"));
     expect(await lookUpStream(AIO, "tt0000005:1:7", "series", PLAYED)).toBeUndefined();
   });
 
   it("asks again when the file isn't in the first list, and stops once it is found", async () => {
     const fetch = vi
       .spyOn(globalThis, "fetch")
-      .mockImplementationOnce(async () => list("Harbor.S01E07.720p.WEB.h264-ETHEL"))
-      .mockImplementationOnce(async () => list("Harbor.S01E07.720p.WEB.h264-ETHEL", `${PLAYED}.mkv`))
+      .mockImplementationOnce(async () => list("Show.S01E07.720p.WEB.h264-CREW"))
+      .mockImplementationOnce(async () => list("Show.S01E07.720p.WEB.h264-CREW", `${PLAYED}.mkv`))
       .mockImplementation(async () => list());
     expect(await lookUpStreamAgain(AIO, "tt0000005:1:7", "series", PLAYED, [1, 1])).toBe(stream(`${PLAYED}.mkv`).url);
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 
   it("gives up after the last wait when the file is in none of the lists", async () => {
-    const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async () => list("Harbor.S01E07.XviD-AFG"));
+    const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async () => list("Show.S01E07.XviD-CLAN"));
     expect(await lookUpStreamAgain(AIO, "tt0000005:1:7", "series", PLAYED, [1, 1])).toBeUndefined();
     expect(fetch).toHaveBeenCalledTimes(3);
     // Found at once: no second look.
