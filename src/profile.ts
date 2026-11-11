@@ -39,6 +39,8 @@ export interface Profile {
   subdlKey?: string;
   /** OpenSubtitles V3+ (no key). */
   opensubtitles: boolean;
+  /** Subtitle Cat (no key): uploads found by name, listed only once synced to the playing file. */
+  subtitlecat: boolean;
   /** Other Stremio subtitle addons asked too. */
   addons: Addon[];
   /** AIOStreams install URL used to find the playing file, as reached from here; no sync without it. */
@@ -70,6 +72,8 @@ export interface Settings {
   subdl?: string;
   /** OpenSubtitles V3+, which needs no key. */
   opensubtitles?: boolean;
+  /** Subtitle Cat, which needs no key. Off unless a link turns it on. */
+  subtitlecat?: boolean;
   /** Other Stremio subtitle addons, by manifest URL. */
   addons?: Addon[];
   /** AIOStreams install URL (https://<allowed host>/stremio/<uuid>/<password>/manifest.json); no sync without it. */
@@ -206,6 +210,7 @@ export function profileFromSettings(settings: Settings, token: string): Profile 
     subsourceKey: settings.subsource ?? "",
     subdlKey: settings.subdl || undefined,
     opensubtitles: settings.opensubtitles === true,
+    subtitlecat: settings.subtitlecat === true,
     addons: settings.addons ?? [],
     // This server's own instance is looked up inside the Docker network; others over the internet.
     aiostreamsUrl: aio ? `${own ? config.aiostreamsBase : aio.origin}${aio.path}/manifest.json` : undefined,
@@ -336,6 +341,7 @@ export function linkSummary(token: string): LinkSummary | undefined {
     ...(s.subsource ? ["SubSource"] : []),
     ...(s.subdl ? ["SubDL"] : []),
     ...(s.opensubtitles ? ["OpenSubtitles"] : []),
+    ...(s.subtitlecat === true ? ["Subtitle Cat"] : []),
     ...(addons ? [addons === 1 ? "1 addon" : `${addons} addons`] : [])
   ];
   return {

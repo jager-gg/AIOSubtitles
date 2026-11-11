@@ -48,6 +48,9 @@ describe("finding the playing file in AIOStreams", () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify(body)));
     expect(await lookUpStream(AIO, "tt1:1:6", "series", fileRef("S01E06.mkv", "2000"))).toBe("https://debrid.example/this-show");
     expect(await lookUpStream(AIO, "tt1:1:6", "series", "S01E06.mkv")).toBe("https://debrid.example/other-show");
+    // A size listed a little off (rounded) still picks the nearer of the two named alike.
+    expect(await lookUpStream(AIO, "tt1:1:6", "series", fileRef("S01E06.mkv", "2003"))).toBe("https://debrid.example/this-show");
+    expect(await lookUpStream(AIO, "tt1:1:6", "series", fileRef("S01E06.mkv", "1100"))).toBe("https://debrid.example/other-show");
     // A renamed file is still found by its exact size.
     expect(await lookUpStream(AIO, "tt1:1:6", "series", fileRef("Show.S01E06.mkv", "2000"))).toBe("https://debrid.example/this-show");
   });

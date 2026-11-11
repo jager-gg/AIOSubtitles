@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agreeAnchors, dialogueCues, imageCues, measureWindow, parseCues, planShifts, retime, type Cue } from "../src/sync.js";
+import { agreeAnchors, holdsTogether, shiftChanges, dialogueCues, imageCues, measureWindow, parseCues, planShifts, retime, type Cue } from "../src/sync.js";
 
 const ASS = `[Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -134,6 +134,24 @@ describe("anchor sync", () => {
     expect(agreeAnchors([w(0, -2200), w(1, -2200), w(2, -2200), w(3, -7000)]).map((a) => a.offset)).toEqual([-2200, -2200, -2200]);
     // Windows may come in any order.
     expect(agreeAnchors([w(3, -4500), w(0, -2200), w(2, -4500), w(1, -2200)]).map((a) => a.offset)).toEqual([-2200, -2200, -4500, -4500]);
+  });
+
+  it("doesn't trust a shift that jumps about more than cuts can explain", () => {
+    const at = (offsets: number[]) => offsets.map((offset, i) => ({ from: i * 60000, to: (i + 1) * 60000, offset, score: 0.9 }));
+    // An episode cut at four breaks: five runs, four changes.
+    const stepped = at([...Array(13).fill(-2200), ...Array(9).fill(-4500), ...Array(5).fill(-7000), ...Array(5).fill(-9600), ...Array(6).fill(-12100)]);
+    expect(shiftChanges(stepped)).toBe(4);
+    expect(holdsTogether(stepped)).toBe(true);
+    // A subtitle for a shorter version of a film: every window a chance fit.
+    const scattered = at([-2400, -2500, -2100, 300, 2400, 2100, 1700, 5000, 5200, 3300, 300, 600, 700, 3500, 6000, 6200, 3200, 400, 800, 5100, 8400, 5900, 6200, 8000, 7900, 7100, 6500]);
+    expect(shiftChanges(scattered)).toBe(13);
+    expect(holdsTogether(scattered)).toBe(false);
+    // Few windows: up to three changes pass, and a slow drift is no change at all.
+    expect(holdsTogether(at([0, 3000, 6000, 9000, 9000]))).toBe(true);
+    expect(holdsTogether(at([0, 3000, 6000, 9000, 12000]))).toBe(false);
+    expect(shiftChanges(at([0, 300, 600, 900, 1200, 1500]))).toBe(0);
+    // A subtitle running slightly fast creeps between its cuts: only the cuts count.
+    expect(shiftChanges(at([-5200, -4600, -3800, -3200, -2200, -4000, -3200, -2600, -4800, -4000, -6100]))).toBe(3);
   });
 
   it("uses one shift when anchors agree", () => {

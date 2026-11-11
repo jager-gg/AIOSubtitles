@@ -18,6 +18,7 @@ import { decodeSubtitle } from "./text.js";
 import { count, noteError, scrub } from "./stats.js";
 import { heardSpeech } from "./vad.js";
 import { dialogueLines, pictureLines, readMkvTiming } from "./mkv.js";
+import { timingByLines } from "./align.js";
 import { checkReads, noteRead, noteReadOk, noteRefusal, ReadsPaused, refusalStatus } from "./reads.js";
 
 export interface Cue {
@@ -258,8 +259,40 @@ type Rescaled = Measurement & { factor: number; captions: Cue[] };
 
 /** Whether measured windows give a sync to trust (the same tests syncCaptions makes). */
 function trusted(m: Measurement): boolean {
-  return fitsFile(m.measuredWindows) && m.anchors.length > 0 && landsOnTiming(m.measuredWindows, m.anchors);
+  return fitsFile(m.measuredWindows) && m.anchors.length > 0 && landsOnTiming(m.measuredWindows, m.anchors) && holdsTogether(m.anchors);
 }
+
+/**
+ * How many times the shift jumps (by more than JUMP_MS) from one anchor to the next. Smaller moves
+ * don't count: a subtitle running a touch fast or slow creeps by half a second a minute or so
+ * between its cuts (Night Patrol S01E06, one English subtitle on the HiggsBoson release).
+ */
+export function shiftChanges(anchors: Anchor[]): number {
+  const sorted = [...anchors].sort((a, b) => a.from - b.from);
+  let changes = 0;
+  for (let i = 1; i < sorted.length; i++) if (Math.abs(sorted[i].offset - sorted[i - 1].offset) > JUMP_MS) changes++;
+  return changes;
+}
+
+const JUMP_MS = 1000;
+
+/**
+ * Whether a timing changes no more often than cuts can explain. A subtitle made for another cut of
+ * the file needs a new shift at each place the cuts differ: a handful of times (four on the episodes
+ * seen so far, five on one release). A shift that jumps about from window to window is something a
+ * shift per stretch can't follow, whatever the cause: chance fits of a subtitle that isn't this
+ * file's, or a subtitle timed by hand to another recording, where each line sits differently (a
+ * Dutch subtitle of a film, timed to a cinema recording: 13 jumps over 27 windows, between -2.5 and
+ * +8.4 s; the steps placed between them were served as synced and weren't). Such a subtitle is left
+ * to byLines, which times it line by line when it is the file's own dialogue. Allowed: one jump per
+ * CHANGE_EVERY anchors, and at least MIN_CHANGES_ALLOWED.
+ */
+export function holdsTogether(anchors: Anchor[]): boolean {
+  return shiftChanges(anchors) <= Math.max(MIN_CHANGES_ALLOWED, Math.floor(anchors.length / CHANGE_EVERY));
+}
+
+const MIN_CHANGES_ALLOWED = 3;
+const CHANGE_EVERY = 6;
 
 /**
  * The captions rescaled to the file's frame rate, when that is what fits: they then land at one shift
@@ -520,8 +553,10 @@ export function measureWindow(embedded: Cue[], captions: Cue[], range = 20000): 
   for (let shift = -range; shift <= range; shift += 40) scores.push(overlap(embedded, near, shift));
   // Local peaks, each refined to 5 ms.
   const peaks: Array<{ offset: number; score: number }> = [];
-  for (let i = 0; i < scores.length; i++) {
-    if (scores[i] <= 0 || scores[i] < (scores[i - 1] ?? 0) || scores[i] < (scores[i + 1] ?? 0)) continue;
+  // The two ends of the range aren't peaks: the fit may still be rising past them, towards a shift
+  // that wasn't searched (The Analyst S05E09: windows "fitting" at exactly -20.0 s).
+  for (let i = 1; i < scores.length - 1; i++) {
+    if (scores[i] <= 0 || scores[i] < scores[i - 1] || scores[i] < scores[i + 1]) continue;
     let peak = { offset: -range + i * 40, score: scores[i] };
     for (let shift = peak.offset - 40; shift <= peak.offset + 40; shift += 5) {
       const score = overlap(embedded, near, shift);
@@ -775,10 +810,14 @@ async function streamUrl(aiostreamsUrl: string, videoId: string, type: string, f
   const listed = (body.streams ?? []).filter((s) => s.url && s.behaviorHints?.filename);
   const size = fileSize(filename);
   const sized = (s: (typeof listed)[number]) => size !== undefined && String(s.behaviorHints!.videoSize ?? "") === size;
-  // Same name and same size first: two listed files can share a name.
+  // Same name and same size first: two listed files can share a name. When none has exactly the
+  // player's size, the nearest in size among those named alike (sizes are listed rounded, or
+  // estimated, and the same file was seen listed 3% apart). Only among files with the right name.
+  const wantedSize = size === undefined ? undefined : Number(size);
+  const off = (s: (typeof listed)[number]) => (wantedSize !== undefined && Number(s.behaviorHints!.videoSize) > 0 ? Math.abs(Number(s.behaviorHints!.videoSize) - wantedSize) : Infinity);
   const pick = (same: (name: string) => boolean) => {
     const named = listed.filter((s) => same(s.behaviorHints!.filename!));
-    return (named.find(sized) ?? named[0])?.url;
+    return (named.find(sized) ?? named.reduce<(typeof listed)[number] | undefined>((best, s) => (best === undefined || off(s) < off(best) ? s : best), undefined))?.url;
   };
   const wanted = bareName(fileName(filename));
   const loose = releaseName(fileName(filename));
@@ -1686,7 +1725,7 @@ function* trackChoiceSteps(found: FileAnchors, captions: Cue[]): Steps<TrackPick
  * file: the replay check (scripts/replay.ts) runs it over past plays. Live syncs check fitsFile on
  * the first windows, before extra rounds; here every stored window counts.
  */
-export function judge(stored: FileAnchors, captions: Cue[]): { verdict: "synced" | "wrong" | "rejected" | "unsynced"; anchors: Anchor[]; offsets: number[]; bySpeech?: boolean; factor?: number; track?: "first" | number } {
+export function judge(stored: FileAnchors, captions: Cue[]): { verdict: "synced" | "wrong" | "rejected" | "unsynced"; anchors: Anchor[]; offsets: number[]; bySpeech?: boolean; byLines?: boolean; factor?: number; track?: "first" | number } {
   if (stored.speechOnly) {
     const speech = bySpeech(stored, captions);
     return speech ? { verdict: "synced", anchors: speech.anchors, offsets: [], bySpeech: true } : { verdict: "unsynced", anchors: [], offsets: [] };
@@ -1698,13 +1737,17 @@ export function judge(stored: FileAnchors, captions: Cue[]): { verdict: "synced"
   if (rated) return { verdict: "synced", anchors: rated.anchors, offsets: rated.measuredWindows.map((w) => w.measured.offset), factor: rated.factor, track };
   const { measuredWindows, anchors } = asWritten;
   const offsets = measuredWindows.map((w) => w.measured.offset);
+  // What no shift fits: line by line first (live, for languages other than the dub captions), then speech.
   const heard = () => {
+    const lined = byLines(stored, captions);
+    if (lined) return { verdict: "synced" as const, anchors: lined.anchors, offsets, byLines: true, track: lined.track };
     const speech = bySpeech(found, captions);
     return speech ? { verdict: "synced" as const, anchors: speech.anchors, offsets, bySpeech: true } : undefined;
   };
   if (!fitsFile(measuredWindows)) return heard() ?? { verdict: "wrong", anchors: [], offsets };
   if (anchors.length === 0) return heard() ?? { verdict: "unsynced", anchors, offsets };
   if (!landsOnTiming(measuredWindows, anchors)) return heard() ?? { verdict: "rejected", anchors: [], offsets };
+  if (!holdsTogether(anchors)) return heard() ?? { verdict: "rejected", anchors: [], offsets };
   return { verdict: "synced", anchors, offsets, track };
 }
 
@@ -1729,6 +1772,52 @@ export function bySpeech(found: FileAnchors, captions: Cue[]): { anchors: Anchor
   return { anchors, reference: heard.flatMap((w) => w.speech), score: fit.score, margin: fit.margin };
 }
 
+/**
+ * Timing line by line (align.ts): for a subtitle that is the file's own dialogue but fits no shift
+ * per stretch. Only on a file timed from its index, where every line of a text track is known. The
+ * tracks are tried in order; the first one the captions surely share their dialogue with times them.
+ * The anchors returned sum it up per window (the median shift of the lines landing there), for the
+ * log and the dashboard: the timing itself is `shifts`, one per caption start.
+ */
+export function byLines(stored: FileAnchors, captions: Cue[]): { shifts: Map<number, number>; anchors: Anchor[]; track: "first" | number; paired: number } | undefined {
+  if (stored.source !== "index" || stored.image || stored.speechOnly) return undefined;
+  for (const track of ["first" as const, ...(stored.others ?? [])]) {
+    const view = track === "first" ? stored : trackView(stored, track);
+    const windows = view.windows.filter((w) => !w.bridge && !w.heard);
+    const timed = timingByLines(captions, windows.flatMap((w) => w.cues));
+    if (!timed) continue;
+    const landed = [...timed.shifts].map(([start, shift]) => ({ at: start + shift, shift })).sort((a, b) => a.at - b.at);
+    const score = Math.round(timed.alignment.captionShare * 100) / 100;
+    const anchors = windows.flatMap((w) => {
+      const here = landed.filter((l) => l.at >= w.from && l.at < w.to).map((l) => l.shift).sort((a, b) => a - b);
+      return here.length ? [{ from: w.from, to: w.to, offset: here[Math.floor(here.length / 2)], score }] : [];
+    });
+    if (anchors.length === 0) continue;
+    return { shifts: timed.shifts, anchors, track, paired: timed.alignment.pairs.length };
+  }
+  return undefined;
+}
+
+/** A shift for any caption start: its own when known, else that of the nearest start that has one. */
+function shiftLookup(shifts: Map<number, number>): (start: number) => number {
+  const starts = [...shifts.keys()].sort((a, b) => a - b);
+  return (start) => {
+    const own = shifts.get(start);
+    if (own !== undefined) return own;
+    let lo = 0;
+    let hi = starts.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (starts[mid] < start) lo = mid + 1;
+      else hi = mid;
+    }
+    const after = starts[lo];
+    const before = starts[lo - 1];
+    const nearest = before !== undefined && (after === undefined || start - before <= after - start) ? before : after;
+    return nearest === undefined ? 0 : shifts.get(nearest) ?? 0;
+  };
+}
+
 const SPEECH_MIN_ANCHORS = 3;
 /** Over the recorded files: own lines scored 0.38 to 0.69, margins 0.14 to 0.42; another file's lines at most 0.40 and 0.13. */
 const SPEECH_MIN_SCORE = 0.35;
@@ -1751,6 +1840,8 @@ export interface SyncResult {
   bySpeech?: boolean;
   /** The file has no subtitle track, so speech was all there was: no alternate can do better. */
   speechOnly?: boolean;
+  /** Timed line by line to the file's own lines (see byLines), not by a shift per stretch. */
+  byLines?: boolean;
   /** The captions were made for another frame rate: their times were multiplied by this (RATE_FACTORS). */
   factor?: number;
 }
@@ -1765,7 +1856,7 @@ export function firstPassSync(key: string): SyncResult | undefined {
 }
 
 /** Bumped when the sync method changes: older results are ignored and download URLs change, so no cache keeps old timing. */
-export const SYNC_VERSION = 9;
+export const SYNC_VERSION = 11;
 
 /**
  * Whether captions belong to the file at all: at least half of the measured
@@ -1938,6 +2029,28 @@ export function syncCaptions(
       noFit = true;
       anchors = [];
     }
+    // A shift that jumps about from window to window is chance fits, not cuts (see holdsTogether):
+    // the captions are for another version of the file. Left unsynced, so a fallback gets its turn.
+    if (anchors.length > 0 && !holdsTogether(anchors)) {
+      console.log(`sync: ${filename}: the shift jumps ${shiftChanges(anchors)} times over ${anchors.length} windows, more than cuts explain: not counted as synced`);
+      count("sync.noFit");
+      noFit = true;
+      anchors = [];
+    }
+    // No shift fits, yet it may be the file's own dialogue timed line by line to another recording:
+    // then each line takes its own line's start (see byLines). Other languages only, as with
+    // snapping: dub captions follow the dub, whose lines aren't the file's.
+    let lineTimed: Map<number, number> | undefined;
+    if (anchors.length === 0 && lang) {
+      const lined = byLines(stored, captions);
+      if (lined) {
+        lineTimed = lined.shifts;
+        anchors = lined.anchors;
+        noFit = false;
+        count("sync.byLines");
+        console.log(`sync: ${filename}: no shift fits, but it is the file's dialogue line for line: ${lined.paired} of ${captions.length} lines timed by the file's own${lined.track === "first" ? "" : ` (track ${lined.track})`}`);
+      }
+    }
     // Nothing fits the subtitle track: speech in the audio, as a last resort.
     let reference = found.windows.flatMap((w) => w.cues);
     let heard = false;
@@ -1966,15 +2079,15 @@ export function syncCaptions(
       await writeFile(meta, JSON.stringify(result));
       return result;
     }
-    const shiftFor = planShifts(anchors, captions, reference);
+    const shiftFor = lineTimed ? shiftLookup(lineTimed) : planShifts(anchors, captions, reference);
     // Lines in the windows read move onto the file's own line starts: other languages only (lang is
     // unset for dub captions and English CC, which follow the dub), and never timing heard in speech.
-    const nudges = lang && !heard && !found.speechOnly ? lineNudges(captions, shiftFor, found.windows.flatMap((w) => w.cues)) : new Map<number, number>();
+    const nudges = lang && !heard && !found.speechOnly && !lineTimed ? lineNudges(captions, shiftFor, found.windows.flatMap((w) => w.cues)) : new Map<number, number>();
     if (nudges.size) count("sync.snapped", nudges.size);
     const out = path.join(cachePath("synced"), `${key}${ext}`);
     await writeFile(out, retime(text, ext, nudges.size ? (start) => shiftFor(start) + (nudges.get(start) ?? 0) : shiftFor, factor));
     console.log(`sync: ${filename}: ${anchors.map((a) => `${Math.round(a.from / 1000)}s ${a.offset >= 0 ? "+" : ""}${a.offset}ms (${a.score})`).join(", ")}${nudges.size ? `; ${nudges.size} lines snapped to the file` : ""}`);
-    const result: SyncResult = { file: out, anchors, filename, source: path.basename(source.file), ...(heard ? { bySpeech: true } : {}), ...(found.speechOnly ? { speechOnly: true } : {}), ...(factor !== 1 ? { factor } : {}) };
+    const result: SyncResult = { file: out, anchors, filename, source: path.basename(source.file), ...(heard ? { bySpeech: true } : {}), ...(found.speechOnly ? { speechOnly: true } : {}), ...(lineTimed ? { byLines: true } : {}), ...(factor !== 1 ? { factor } : {}) };
     await writeFile(meta, JSON.stringify(result));
     return result;
   })().catch((error) => {

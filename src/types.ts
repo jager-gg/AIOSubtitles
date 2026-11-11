@@ -43,7 +43,7 @@ export interface SubSourceSubtitle {
   // Where it comes from. SubSource's own subtitles go by subtitleId alone.
   /** Source-tagged id for other sources ("sd…", "os…"); SubSource uses subtitleId. */
   ref?: string;
-  source?: "subsource" | "subdl" | "opensubtitles" | "addon";
+  source?: "subsource" | "subdl" | "opensubtitles" | "addon" | "subtitlecat";
   /** An added addon's subtitle URL, sealed (see sealUrl): it may carry that addon's keys. */
   sealedUrl?: string;
   /** The source already searched for this episode, so the result is for it. */
@@ -81,4 +81,6 @@ export interface RankedSubtitle extends SubSourceSubtitle {
   releaseMatch?: number;
   /** Translation quality, see quality.ts: 3 official, 2 human, 1 unknown. */
   quality?: 1 | 2 | 3;
+  /** A machine or AI translation, kept because the link allows them: ranked below every other. */
+  machine?: boolean;
 }

@@ -25,6 +25,16 @@ const episodeOf = (season: number, episode: number, absoluteEpisode?: number): S
   absoluteEpisode
 });
 
+describe("machine translations, when a link allows them", () => {
+  it("rank below every other subtitle, however well their name fits", () => {
+    const request = { ...episodeOf(1, 5), filename: "Show.S01E05.1080p.WEB-DL-GROUP.mkv" };
+    const machine = sub({ subtitleId: 1, releaseInfo: ["Show.S01E05.1080p.WEB-DL-GROUP"], productionType: "machine translated", downloads: 9000 });
+    const unknown = sub({ subtitleId: 2, releaseInfo: ["Show - 05"] });
+    expect(filterAndRankDubtitles([machine, unknown], request, { requireDub: false, allowMachine: true }).map((s) => s.subtitleId)).toEqual([2, 1]);
+    expect(filterAndRankDubtitles([machine, unknown], request, { requireDub: false, allowMachine: false }).map((s) => s.subtitleId)).toEqual([2]);
+  });
+});
+
 describe("a subtitle that names another season", () => {
   const starfall = (subtitleId: number, episode: string, extra: Partial<SubSourceSubtitle> = {}) =>
     sub({ subtitleId, releaseInfo: [`The Starfall Season 5 (Original Name, Other Name) Ep ${episode}`], commentary: "FanSubs", ...extra });

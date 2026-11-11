@@ -158,6 +158,7 @@ export function configurePage(current?: Settings, signedIn = false): string {
   const others = (current?.languages ?? []).filter((l) => ![...COMMON_LANGUAGES, REGULAR_ENGLISH].some((c) => c.toLowerCase() === l.toLowerCase()));
   const hi = current?.hearingImpaired ?? "include";
   const openSubtitlesOn = current ? current.opensubtitles === true : true;
+  const subtitleCatOn = current?.subtitlecat === true;
   // The public instances a link may use, each opening its own site (where Save & install is) in a new tab.
   // This server's own AIOStreams comes first, when it has one.
   const instanceLinks = [...(config.ownAiostreams ? [config.ownAiostreams] : []), ...PUBLIC_AIOSTREAMS.filter((o) => config.allowedAiostreams.includes(o) && o !== config.ownAiostreams)]
@@ -229,7 +230,8 @@ export function configurePage(current?: Settings, signedIn = false): string {
       card("Subtitle sites", "Your keys stay encrypted inside your link.", `
         ${secretRow({ name: "subsource", label: "SubSource API key", placeholder: "sk_…", saved: Boolean(current?.subsource), help: 'Optional. From <a href="https://subsource.net/api" target="_blank" rel="noopener">subsource.net/api</a>.', removeLabel: "Stop using SubSource", letters: "SS" })}
         ${secretRow({ name: "subdl", label: "SubDL API key", placeholder: "Your SubDL key", saved: Boolean(current?.subdl), help: 'Optional. From <a href="https://subdl.com/panel/api" target="_blank" rel="noopener">subdl.com/panel/api</a>. Often has dub caption packs.', removeLabel: "Stop using SubDL", letters: "SD" })}
-        ${switchRow("opensubtitles", "OpenSubtitles", "Through OpenSubtitles V3+. No key needed.", openSubtitlesOn, "OS")}`) +
+        ${switchRow("opensubtitles", "OpenSubtitles", "Through OpenSubtitles V3+. No key needed.", openSubtitlesOn, "OS")}
+        ${switchRow("subtitlecat", "Subtitle Cat", "Uploads the other sites lack, such as fan translations. Found by name, so one is listed only once it has synced to your file. No key needed.", subtitleCatOn, "SC")}`) +
       card("Other subtitle addons", "Optional. Any Stremio subtitle addon is asked too, and what it finds is ranked and synced.", `
         ${addonRows}
         <details class="item more"${savedAddons.length ? " open" : ""}>
@@ -730,6 +732,7 @@ ${instancesDialog}
       subsource: value("subsource"),
       subdl: value("subdl"),
       opensubtitles: data.get("opensubtitles") === "on",
+      subtitlecat: data.get("subtitlecat") === "on",
       addAddons: String(data.get("addAddons") || ""),
       removeAddons: [...document.querySelectorAll("[data-addon].removing")].map((row) => Number(row.dataset.addon)),
       aiostreams: value("aiostreams"),
@@ -800,7 +803,7 @@ ${instancesDialog}
     const syncOn = present("aiostreams");
     const syncChecked = syncOn && b.aiostreams === checkedAio;
     set("sync", !syncOn ? "Not connected yet" : syncChecked ? "On, to the file you play" : "Checked when you move on", syncOn ? "" : "warn", !syncOn ? "Needed" : syncChecked ? "Connected" : "Not checked yet");
-    const sites = [present("subsource") && "SubSource", present("subdl") && "SubDL", b.opensubtitles && "OpenSubtitles"].filter(Boolean);
+    const sites = [present("subsource") && "SubSource", present("subdl") && "SubDL", b.opensubtitles && "OpenSubtitles", b.subtitlecat && "Subtitle Cat"].filter(Boolean);
     const addons = document.querySelectorAll("[data-addon]:not(.removing)").length + b.addAddons.split(/\\s+/).filter(Boolean).length;
     const total = sites.length + addons;
     if (addons) sites.push(addons === 1 ? "1 addon" : addons + " addons");

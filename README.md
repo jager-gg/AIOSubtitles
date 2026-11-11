@@ -4,11 +4,11 @@ A self-hosted Stremio subtitle addon for [AIOStreams](https://github.com/Viren07
 
 ## Features
 
-- **Several sources:** SubSource, SubDL, OpenSubtitles (no key needed) and up to 3 other Stremio subtitle addons. All results are ranked together and the best one wins.
+- **Several sources:** SubSource, SubDL, OpenSubtitles (no key needed), Subtitle Cat (off unless turned on, no key needed) and up to 3 other Stremio subtitle addons. All results are ranked together and the best one wins.
 - **English Dub captions:** subtitles transcribed from the English dub, so the words match the voices. Falls back to official English closed captions when no dub captions exist.
 - **Regular English too:** for watching in the original language, regular English subtitles timed to the original voices, as a separate choice.
-- **Other languages:** the best subtitle per language, official translations first, machine translations left out unless you allow them.
-- **Synced to your file:** reads the timing of the playing file's own subtitles (for most .mkv files from its index, about 1 MB; otherwise a few short stretches) and shifts each subtitle to match. Handles timing that changes mid-episode, subtitles made for another frame rate, and files with no subtitles (timed by speech in the audio).
+- **Other languages:** the best subtitle per language, official translations first, machine translations left out unless you allow them, and ranked below every other subtitle when you do.
+- **Synced to your file:** reads the timing of the playing file's own subtitles (for most .mkv files from its index, about 1 MB; otherwise a few short stretches) and shifts each subtitle to match. Handles timing that changes mid-episode, subtitles made for another frame rate, subtitles timed by hand to another recording (timed line by line from the file's own subtitles), and files with no subtitles (timed by speech in the audio).
 - **Per-person settings:** each person makes their own link with their own keys. Settings are encrypted into the link; nothing about them is stored in plain text on the server.
 - **Dashboard:** usage, API limits per key, errors and recent activity.
 
@@ -82,7 +82,7 @@ To keep it off the internet, run it on the same Docker network as AIOStreams and
 
 1. Open `/configure`.
 2. **Connect AIOStreams:** paste your AIOStreams install URL (in AIOStreams: **Save & install**, then copy it).
-3. **Choose your sources:** a SubSource or SubDL key, OpenSubtitles, and/or other subtitle addons by manifest URL.
+3. **Choose your sources:** a SubSource or SubDL key, OpenSubtitles, Subtitle Cat, and/or other subtitle addons by manifest URL. Subtitle Cat finds uploads the other sites lack, such as fan translations, by name only, so one of its subtitles is listed only once it has synced to the playing file.
 4. **Pick your languages:** **English Dub** gives captions written from the English dub, for watching dubbed. **English** gives regular subtitles, for watching in the original language. Every other language gets its best subtitle.
 5. **Set your filters:** machine translations, hearing-impaired subtitles, and the switches below.
 6. **Create your link**, then in AIOStreams: **Add addon → Custom**, paste the link as the manifest URL, resources: Subtitles.

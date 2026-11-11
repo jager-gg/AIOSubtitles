@@ -1,7 +1,7 @@
 # How it works
 
 ```
-player -> AIOStreams -> AIOSubtitles -> SubSource, SubDL, OpenSubtitles, other addons
+player -> AIOStreams -> AIOSubtitles -> SubSource, SubDL, OpenSubtitles, Subtitle Cat, other addons
                              |
                              +-> AIOStreams (find the playing file) -> the file's Matroska index (about 1 MB)
                                                                      -> else ffprobe/ffmpeg windows
@@ -16,11 +16,12 @@ player -> AIOStreams -> AIOSubtitles -> SubSource, SubDL, OpenSubtitles, other a
 - **Dub captions** must be tagged as such: `Dubbed Version`, `Eng Dub`, `English Dub` or `dub version`.
 - **Regular English** is a language of its own (`English Subtitles` in a link's settings; `English` there means the dub captions). It's ranked like any other language, and subtitles tagged as dub captions are left out of it.
 - **English CC fallback:** when nothing is tagged as dub captions, an official English hearing-impaired track (Netflix and the like) is served as **English CC**. On streaming services, the English CC of a dubbed show usually transcribes the dub.
-- Season packs are unzipped. A pack whose only file names another episode is refused for other episodes.
+- Season packs are unzipped. A pack whose only file names another episode is refused for other episodes. A file that covers a run of three or more episodes (`EP1-EP9 en.srt`, the subtitle of a compilation video) is never taken for one of them.
+- **No empty tracks:** with a file playing, each listed pack is opened while the list is made (within the list's own time limit); one that lacks the episode gives its place to the next subtitle in line. A download that can't be had the same way sends the next subtitle in line instead of nothing.
 
 ### Ranking
 
-- Machine and AI translations are dropped, whether the source's type tag says so or the notes do (ChatGPT, DeepL, Google Translate and the like), unless the link allows them.
+- Machine and AI translations are dropped, whether the source's type tag says so or the notes do (ChatGPT, DeepL, Google Translate and the like), unless the link allows them. When allowed, they rank below every other subtitle of the same language.
 - The rest are ranked: official (retail, or notes naming Crunchyroll, Netflix and the like), then human (translated or improved, or credited to a team), then unknown.
 - Within a tier, subtitles made for the playing release come first, then ratings, then downloads. The release match compares the filename's release group (+3), streaming service (+2) and source (+1) with the subtitle's release names and notes; a different service or source counts -1. SubsPlease, Erai-raws and HorribleSubs count as Crunchyroll.
 - UTF-16 files are converted to UTF-8. Other non-UTF-8 files are decoded with the language's Windows code page (1256 for Arabic).
@@ -32,6 +33,7 @@ player -> AIOStreams -> AIOSubtitles -> SubSource, SubDL, OpenSubtitles, other a
 | SubSource | the person's key | Searched by IMDb record |
 | SubDL | the person's key | Searched by IMDb id, season and episode. Its download links carry the key, so they're fetched only by the server and never logged |
 | OpenSubtitles V3+ | nothing | VTT files are repaired back to the original upload. Its episode match can be loose, so a result is trusted only when its release name doesn't name another episode |
+| Subtitle Cat | nothing; off unless the link turns it on | Searched by the show's title with the episode number (films: title and year), since it has no ids. A result is kept only when its name is that title followed by that episode. The upload itself counts in the language it names; its other files are machine translations. Each download is checked to be written in the language it is listed under. Its subtitles are listed only once they have synced to the playing file (by shift, line by line, or by speech), so none is listed when no file is named |
 | Other addons | whatever the addon's URL holds | Asked the way a player would, with a 10 s timeout. Their URLs stay encrypted and are never logged. Only public https hosts are fetched, redirects included, so an addon can't point the server at a private network. AIOStreams and AIOSubtitles itself are refused |
 
 ## Syncing to the playing file
@@ -65,9 +67,21 @@ For languages other than English Dub, a line within 0.3 s of one of the file's o
 
 When a subtitle fits none of the file's text subtitle tracks, or the file has no subtitle track at all, the subtitle is timed by where speech starts in the audio of the same windows. The audio is read in the same pass as text subtitles (for a file timed from its index, at the 5 usual points, only once nothing fits); files whose only subtitles are pictures (PGS, VobSub) don't have it read, so they have no speech fallback. Speech is detected with [Silero VAD](https://github.com/snakers4/silero-vad), run on WebAssembly. It needs at least 3 windows and a clear best shift. These tracks are labelled "Synced by audio".
 
+On a file with no subtitle track, when speech can't time the top subtitle of a language but can time one further down the list, that one takes its place, in the list and in the download. Until the result is in, the list says "Trying audio sync" and is sent with a 30-second cache instead of 5 minutes, so a player that asks again gets the result.
+
 ### Subtitles that don't belong to the file
 
 Real subtitles fit at the same shift window after window. When most windows disagree with each other (for example another episode's subtitles), the subtitle is left as it is and listed as not synced.
+
+The same goes for a shift that jumps about. A subtitle made for another cut changes shift where the cuts differ, a handful of times. One that jumps by over a second more often than once per six points measured (and more than three times) can't be followed by a shift per stretch. It isn't served as synced that way; it goes to the line-by-line timing below.
+
+### Timing line by line
+
+Some subtitles are the file's own dialogue, line for line, but were timed by hand to another recording (a cinema recording, say), so every line sits a little differently and no shift fits. On a Matroska file timed from its index, every line of its subtitle tracks is known, so such a subtitle can take its timing from them directly (`src/align.ts`).
+
+The subtitle's lines and the file's lines are paired in order by their rhythm: two timings of the same dialogue differ in where a line starts, far less in how long the pause to the next line is and how long a line lasts. A line on either side may be left out (a split line, a sign, a credit). Each paired line then starts where the file's line starts; a line left out moves with its neighbours.
+
+It is used only when the pairing is beyond doubt: at least 60 lines on each side, 90% of the subtitle's lines paired, 85% of the pairs lasting within a second of each other, the shift moving by under 2 s from one pair to the next for 90% of them, and never more than 8 subtitle lines in a row unpaired. Against 4,573 stored pairs of a file with another episode's, show's or film's subtitle, none passed. It applies to languages other than English Dub, after the shift-based sync has found nothing to trust, and before speech.
 
 ## Responding in time
 

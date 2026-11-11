@@ -297,6 +297,7 @@ export function filterAndRankDubtitles(
       {
         ...subtitle,
         quality,
+        ...(tier === -1 ? { machine: true } : {}),
         dubtitleScore: phrase === 2 ? 2 : 1,
         releaseMatch: releaseMatch(subtitle, request.filename),
         episodeExact:
@@ -313,6 +314,7 @@ export function filterAndRankDubtitles(
 /** What decides between two fitting subtitles, most important first. Higher is better for each. */
 const RANKING: Array<(subtitle: RankedSubtitle) => number> = [
   (s) => s.dubtitleScore, // the dub tag
+  (s) => Number(!s.machine), // a person's (or unknown) before a machine's, when machine translations are allowed
   (s) => s.quality ?? 1, // translation quality
   (s) => s.releaseMatch ?? 0, // fit to the playing release
   (s) => Number(s.episodeExact), // names this exact episode

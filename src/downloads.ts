@@ -13,8 +13,9 @@ import { fetchPublic, readCapped } from "./net.js";
 import { utf16ToUtf8 } from "./text.js";
 import { count, noteError, noteKeyCall } from "./stats.js";
 import { downloadSubtitleArchive } from "./subsource.js";
+import { downloadSubtitleCat } from "./subtitlecat.js";
 import { openSubtitlesDownloadUrl, repairOpenSubtitlesVtt, subdlDownloadUrl } from "./sources.js";
-import { bareEpisodeMarkerMatches, bareNumbers, episodeMarkerMatches, extractEpisodeMarkers, fileLooksLikeSubtitle } from "./matching.js";
+import { bareEpisodeMarkerMatches, bareNumbers, episodeMarkerMatches, extractEpisodeMarkers, extractEpisodeRange, fileLooksLikeSubtitle } from "./matching.js";
 
 /** The keys a download may need, from whoever asked for it. */
 export interface SourceKeys {
@@ -54,6 +55,7 @@ async function fetchSource(ref: string, keys: SourceKeys): Promise<Buffer> {
     const body = await readCapped(response, 10_000_000);
     return body[0] === 0x1f && body[1] === 0x8b ? gunzipSync(body, { maxOutputLength: 20_000_000 }) : body;
   }
+  if (ref.startsWith("sc")) return downloadSubtitleCat(ref);
   let url: string | undefined;
   if (ref.startsWith("sd")) {
     if (!keys.subdl) throw new Error("no SubDL key for this subtitle");
@@ -76,7 +78,7 @@ async function ensureDownloadCached(ref: string, keys: SourceKeys): Promise<stri
   const file = path.join(folder, `${cacheName(ref)}.bin`);
   if (!(await exists(file))) {
     // One real download from a source; a cached file costs nothing.
-    const source = /^(?:ss)?\d+$/.test(ref) ? "subsource" : ref.startsWith("sd") ? "subdl" : ref.startsWith("os") ? "opensubtitles" : "addons";
+    const source = /^(?:ss)?\d+$/.test(ref) ? "subsource" : ref.startsWith("sd") ? "subdl" : ref.startsWith("os") ? "opensubtitles" : ref.startsWith("sc") ? "subtitlecat" : "addons";
     count(`fetch.${source}`);
     try {
       await writeFile(file, await fetchSource(ref, keys));
@@ -104,8 +106,24 @@ function sniffExtension(buffer: Buffer): string {
 /** Subtitle files run to a few hundred KB; a long, heavily styled ASS stays well under this. */
 const MAX_UNPACKED_BYTES = 20 * 1024 * 1024;
 
+/**
+ * The run of episodes one file covers, when its name gives one of three or more: "EP1-EP9 en.srt",
+ * "10-18en.srt". Such a file is the subtitle of a compilation video (Crown of Frost on SubSource:
+ * a pack of three files for episodes 1 to 26), not of any one episode: its "EP1" would
+ * otherwise be taken for episode 1. Two episodes ("S01E01-E02") is a double episode and stays.
+ */
+export function compilationRange(name: string): { from: number; to: number } | undefined {
+  const base = name.replace(/^.*[\\/]/, "");
+  const spelled = extractEpisodeRange(base);
+  const bare = /^\s*0*(\d{1,3})\s*[-~]\s*0*(\d{1,3})(?=\D|$)/.exec(base);
+  const range = spelled ?? (bare ? { from: Number(bare[1]), to: Number(bare[2]) } : undefined);
+  return range && range.to - range.from >= 2 ? range : undefined;
+}
+
 export function selectArchiveEntry(zip: AdmZip, season?: number, episode?: number): AdmZip.IZipEntry | undefined {
-  const files = zip.getEntries().filter((entry) => !entry.isDirectory && fileLooksLikeSubtitle(entry.entryName));
+  const every = zip.getEntries().filter((entry) => !entry.isDirectory && fileLooksLikeSubtitle(entry.entryName));
+  // For an episode, files that each cover a run of episodes aren't candidates.
+  const files = season && episode ? every.filter((entry) => !compilationRange(entry.entryName)) : every;
   if (season && episode) {
     const named =
       files.find((entry) => episodeMarkerMatches(entry.entryName, season, episode)) ??
