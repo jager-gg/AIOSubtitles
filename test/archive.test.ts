@@ -41,6 +41,19 @@ describe("the subtitle inside a downloaded zip", () => {
     expect(selectArchiveEntry(pack, 1, 2)?.entryName).toBe("Show.S01E02.srt");
     expect(selectArchiveEntry(pack, 1, 3)).toBeUndefined();
   });
+
+  it("treats a special (season 0) as an episode, not a film", () => {
+    // The fuller file would be a film's pick: a special's is the one named for it.
+    const specials = zip({ "Show.S00E01.srt": 40000, "Show.S00E02.srt": 52000 });
+    expect(selectArchiveEntry(specials, 0, 1)?.entryName).toBe("Show.S00E01.srt");
+    expect(selectArchiveEntry(specials, 0, 2)?.entryName).toBe("Show.S00E02.srt");
+    expect(selectArchiveEntry(specials, 0, 3)).toBeUndefined();
+    // A lone file named for another special isn't this one.
+    expect(selectArchiveEntry(zip({ "Show.S00E02.srt": 40000 }), 0, 1)).toBeUndefined();
+    expect(selectArchiveEntry(zip({ "Show OVA.srt": 40000 }), 0, 1)?.entryName).toBe("Show OVA.srt");
+    // By the subtitle's own count too.
+    expect(selectArchiveEntry(specials, 0, 2, 1)?.entryName).toBe("Show.S00E02.srt");
+  });
 });
 
 describe("an episode's file in a pack, by its number", () => {

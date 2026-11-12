@@ -57,11 +57,20 @@ export function searchMoviesByImdb(imdbId: string, apiKey: string): Promise<SubS
   );
 }
 
+/** Records searched for every series: the first FIRST_RECORDS of findCandidateMovies' order. */
+export const FIRST_RECORDS = 3;
 /**
- * SubSource records to try, best first. Anime is often filed on a whole-series
- * record (season 0) or on season 1 with absolute numbering, while the season
- * record itself is empty. Records with no subtitles at all are skipped, which
- * costs no API calls.
+ * Records of one show searched at most. Each is a list per language (cached 6 hours, and shared by
+ * every episode of the show), so a show's first list costs a few calls more, not one per season.
+ */
+export const MAX_RECORDS = 8;
+
+/**
+ * SubSource records to try, best first, MAX_RECORDS at most. Anime is often filed on a whole-series
+ * record (season 0) or on season 1 with absolute numbering, while the season record itself is empty.
+ * The first FIRST_RECORDS are searched for every series; the rest only when the show's season map
+ * can read names by title (app.ts), since uploaders file a season under another season's record.
+ * Records with no subtitles at all are skipped, which costs no API calls.
  */
 export async function findCandidateMovies(request: StremioSubtitleRequest, apiKey: string): Promise<SubSourceMovie[]> {
   if (!request.imdbId) return [];
@@ -76,7 +85,12 @@ export async function findCandidateMovies(request: StremioSubtitleRequest, apiKe
   for (const record of [...preferred, ...seasons]) {
     if (record && !picked.has(record.movieId)) picked.set(record.movieId, record);
   }
-  return [...picked.values()].filter((record) => record.subtitleCount !== 0).slice(0, 3);
+  const all = [...picked.values()].filter((record) => record.subtitleCount !== 0);
+  // Past the first ones, the seasons nearest the one asked for come first, so the cap leaves out the farthest.
+  const season = request.season ?? 1;
+  const distance = (record: SubSourceMovie) => Math.abs((record.season ?? 0) - season);
+  const rest = all.slice(FIRST_RECORDS).sort((a, b) => distance(a) - distance(b) || (a.season ?? 0) - (b.season ?? 0));
+  return [...all.slice(0, FIRST_RECORDS), ...rest].slice(0, MAX_RECORDS);
 }
 
 /** Episode number counted across seasons (specials excluded), from Cinemeta's episode list. */

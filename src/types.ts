@@ -22,6 +22,23 @@ export interface StremioSubtitleRequest {
   absoluteEpisode?: number;
 }
 
+/**
+ * A show's seasons as the Anime Kitsu addon lists them (ids.ts): one entry per season, part of a
+ * season or special, each with its own titles and the IMDb place of each of its episodes. Anime
+ * uploaders name a later season by its own title ("Show: Second Arc - 03") and count its episodes
+ * from 1, so the title says which season a bare number belongs to (matching.ts).
+ */
+export interface SeasonMap {
+  /** The show's own name, as Cinemeta gives it. */
+  show: string;
+  entries: Array<{
+    /** Its name and aliases, as the addon gives them. */
+    titles: string[];
+    /** Its own episode number -> [IMDb season, IMDb episode]. */
+    episodes: Record<string, [number, number]>;
+  }>;
+}
+
 /** One SubSource title record. Series have one per season, plus sometimes a season 0 for the whole show. */
 export interface SubSourceMovie {
   movieId: number;
@@ -77,6 +94,11 @@ export interface RankedSubtitle extends SubSourceSubtitle {
   episodeExact: boolean;
   /** Files inside are numbered by absolute episode (e.g. a pack named "Ep1-100"). */
   absoluteNumbered?: boolean;
+  /**
+   * The episode's number within the season or part its name gives, when that differs from the IMDb
+   * episode ("Show: Third Arc Part 2 - 01" is IMDb's season 3 episode 12): its file in a pack is found by it.
+   */
+  pick?: number;
   /** Fit of its release names to the playing filename, see releaseMatch. */
   releaseMatch?: number;
   /** Translation quality, see quality.ts: 3 official, 2 human, 1 unknown. */

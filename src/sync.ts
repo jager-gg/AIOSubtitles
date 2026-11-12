@@ -1903,10 +1903,11 @@ export function fitsFile(windows: Array<{ measured: Measured }>): boolean {
 /** How far apart three windows' readings may be and still count as one timing that drifts. */
 const BAND_MS = 1500;
 
-export function syncKey(ref: string | number, season: number | undefined, episode: number | undefined, filename: string): string {
+export function syncKey(ref: string | number, season: number | undefined, episode: number | undefined, filename: string, pick?: number): string {
   // The ref as every caller passes it ("ss123", "osar-456"): the key must not change, or every synced
-  // result is made again.
-  return cacheKey({ kind: "synced", subtitleId: ref, season, episode, filename, version: SYNC_VERSION });
+  // result is made again. A pack's file found by the subtitle's own count (pick, see downloads.ts) can
+  // be another file than the one found by the episode, so it has a key of its own.
+  return cacheKey({ kind: "synced", subtitleId: ref, season, episode, filename, version: SYNC_VERSION, ...(pick !== undefined ? { pick } : {}) });
 }
 
 /**

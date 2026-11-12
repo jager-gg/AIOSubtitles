@@ -139,20 +139,40 @@ export function withoutSeasons(name: string): string {
     .replace(/\b\d{1,2}(?=x\d)/gi, "");
 }
 
-export function selectArchiveEntry(zip: AdmZip, season?: number, episode?: number): AdmZip.IZipEntry | undefined {
+/**
+ * A name without the numbers of its title's season or part ("Show Part 2 - 01" -> "Show - 01",
+ * "Show Season 2 - 03" -> "Show - 03"), so they aren't read as the episode: every file of a part's
+ * pack says "Part 2", and episode 2 would be found in each.
+ */
+export function withoutTitleNumbers(name: string): string {
+  return name.replace(/\b(?:season|part|cour)[\s._-]*\d{1,2}\b|\b\d{1,2}(?:st|nd|rd|th)[\s._-]*(?:season|part|cour)\b/gi, " ");
+}
+
+/** The episode numbers a file's name gives, its title's season and part numbers left out. */
+const numbersOf = (name: string) => bareNumbers(withoutTitleNumbers(withoutSeasons(name.replace(/^.*[\\/]/, "").replace(/\.[a-z0-9]{2,4}$/i, ""))));
+
+/**
+ * The pack's file for this episode. pick: the episode's number within the season or part the
+ * subtitle's name gave ("Show: Third Arc Part 2 [1 ~ 11]" holds IMDb's season 3 episode 12 as its
+ * "- 01"), when that isn't the IMDb episode. Season 0 is IMDb's specials, an episode like any other
+ * ("S00E01"), not a film.
+ */
+export function selectArchiveEntry(zip: AdmZip, season?: number, episode?: number, pick?: number): AdmZip.IZipEntry | undefined {
   const every = zip.getEntries().filter((entry) => !entry.isDirectory && fileLooksLikeSubtitle(entry.entryName));
+  const anEpisode = season !== undefined && Boolean(episode);
   // For an episode, files that each cover a run of episodes aren't candidates.
-  const files = season && episode ? every.filter((entry) => !compilationRange(entry.entryName)) : every;
-  if (season && episode) {
+  const files = anEpisode ? every.filter((entry) => !compilationRange(entry.entryName)) : every;
+  if (episode && pick !== undefined) return pickedEntry(files, season, episode, pick);
+  if (anEpisode && episode) {
     const named =
       files.find((entry) => episodeMarkerMatches(entry.entryName, season, episode)) ??
-      files.find((entry) => bareEpisodeMarkerMatches(withoutSeasons(entry.entryName), episode));
+      files.find((entry) => bareEpisodeMarkerMatches(withoutTitleNumbers(withoutSeasons(entry.entryName)), episode));
     if (named) return named;
   }
 
   // A film's zip often holds the same subtitle under several release names (seen: two remuxes'
   // names, both 88 KB): the fullest one, never a forced-lines file. Sync then checks it fits.
-  if (!(season && episode) && files.length > 1) {
+  if (!anEpisode && files.length > 1) {
     const full = files.filter((entry) => !/forced|signs?\b/i.test(entry.entryName));
     return (full.length ? full : files).reduce((a, b) => (b.header.size > a.header.size ? b : a));
   }
@@ -160,7 +180,31 @@ export function selectArchiveEntry(zip: AdmZip, season?: number, episode?: numbe
   // A lone file is the episode only if its name doesn't say it's another one: SubDL lists
   // "season packs" that hold just episode 1 ("Show - S01E01 (001).srt").
   if (files.length !== 1) return undefined;
-  return season && episode && namesAnotherEpisode(files[0].entryName, episode) ? undefined : files[0];
+  return anEpisode && episode && namesAnotherEpisode(files[0].entryName, episode) ? undefined : files[0];
+}
+
+/**
+ * The file numbered as the subtitle's name counts (pick), for the IMDb episode asked for: one named
+ * with the IMDb season and episode first, then one numbered pick (one that also gives the IMDb number,
+ * "Show - 15 [P2 - 04]", before one that gives pick alone). A pack of a part holds no other episode
+ * of that number, so a file numbered like the IMDb episode is taken only when none is numbered pick
+ * (a part's pack whose files count on within the season). A lone file is taken unless it names
+ * another episode in both counts.
+ */
+function pickedEntry(files: AdmZip.IZipEntry[], season: number | undefined, episode: number, pick: number): AdmZip.IZipEntry | undefined {
+  if (season !== undefined) {
+    const spelled = files.find((entry) => episodeMarkerMatches(entry.entryName, season, episode));
+    if (spelled) return spelled;
+  }
+  // A file whose season-and-episode marker is another episode in both counts is never it.
+  const markers = (entry: AdmZip.IZipEntry) => extractEpisodeMarkers(entry.entryName.replace(/^.*[\\/]/, ""));
+  const open = files.filter((entry) => markers(entry).length === 0 || markers(entry).some((m) => m.episode === pick));
+  const numbered = open.filter((entry) => numbersOf(entry.entryName).includes(pick));
+  const best = numbered.find((entry) => numbersOf(entry.entryName).includes(episode)) ?? numbered.find((entry) => numbersOf(entry.entryName).length === 1) ?? numbered[0];
+  if (best) return best;
+  const imdbNumbered = open.find((entry) => markers(entry).length === 0 && numbersOf(entry.entryName).includes(episode));
+  if (imdbNumbered) return imdbNumbered;
+  return files.length === 1 && open.length === 1 && numbersOf(files[0].entryName).length === 0 ? files[0] : undefined;
 }
 
 /** "S01E01", "E01", "- 001" and the like that point at an episode other than this one. */
@@ -176,23 +220,32 @@ function missingFile(cacheStem: string): string {
   return path.join(cachePath("subtitles"), `${cacheStem}.missing`);
 }
 
+/**
+ * What a subtitle's file for this episode is stored as: "<subtitle>-<season>-<episode>", and
+ * "-p<pick>" after it when the pack's file is found by the subtitle's own count (selectArchiveEntry),
+ * which can be another file of the same pack.
+ */
+const stemOf = (ref: string | number, season: number | undefined, episode: number | undefined, pick?: number) =>
+  `${cacheName(String(ref))}-${season ?? "movie"}-${episode ?? "full"}${pick !== undefined ? `-p${pick}` : ""}`;
+
 /** Whether this subtitle is known not to have the episode (its pack held another one). */
-export async function knownMissing(ref: string | number, season: number | undefined, episode: number | undefined): Promise<boolean> {
-  return exists(missingFile(`${cacheName(String(ref))}-${season ?? "movie"}-${episode ?? "full"}`));
+export async function knownMissing(ref: string | number, season: number | undefined, episode: number | undefined, pick?: number): Promise<boolean> {
+  return exists(missingFile(stemOf(ref, season, episode, pick)));
 }
 
 export async function getCachedSubtitleFile(
   ref: string | number,
   season: number | undefined,
   episode: number | undefined,
-  keys: SourceKeys
+  keys: SourceKeys,
+  pick?: number
 ): Promise<{ file: string; filename: string }> {
   const id = String(ref);
   const stored = cachePath("subtitles");
   await mkdir(stored, { recursive: true });
 
   // Already taken out for this episode: any format will do.
-  const cacheStem = `${cacheName(id)}-${season ?? "movie"}-${episode ?? "full"}`;
+  const cacheStem = stemOf(id, season, episode, pick);
   for (const ext of STORED_FORMATS) {
     const file = path.join(stored, cacheStem + ext);
     if (await exists(file)) return { file, filename: path.basename(file) };
@@ -208,7 +261,7 @@ export async function getCachedSubtitleFile(
     return { file, filename: path.basename(file) };
   }
 
-  const entry = selectArchiveEntry(new AdmZip(buffer), season, episode);
+  const entry = selectArchiveEntry(new AdmZip(buffer), season, episode, pick);
   if (!entry) {
     await writeFile(missingFile(cacheStem), "");
     const notInPack = new Error(`Subtitle ${id} is an archive without S${season}E${episode} in it.`);

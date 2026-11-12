@@ -4,6 +4,7 @@
  * in place of a subtitle that doesn't fit, the dub and CC tracks, SubDL's daily downloads, and the
  * download's one time budget.
  */
+import AdmZip from "adm-zip";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
@@ -75,7 +76,8 @@ function subsource(url: URL, lists: Record<string, unknown[]>, files: Record<str
   return undefined;
 }
 
-const cinemeta = (url: URL) => (url.hostname === "v3-cinemeta.strem.io" ? json({ meta: { country: "Japan", name: "Show" } }) : undefined);
+/** Cinemeta for an anime (animation from Japan): the season map is looked up only for one. */
+const cinemeta = (url: URL) => (url.hostname === "v3-cinemeta.strem.io" ? json({ meta: { country: "Japan", genres: ["Animation"], name: "Show" } }) : undefined);
 const openSubtitlesArabic = (url: URL, id: number) =>
   url.hostname === "opensubtitles.stremio.homes" ? json({ subtitles: [{ sub_id: id, lang_code: "ar", title: "Show.S01E05.1080p.WEB" }] }) : undefined;
 
@@ -355,5 +357,108 @@ describe("a download", () => {
     await downloadSubtitleArchive(9601, "sk_time_limit_key_12");
     expect(signals).toHaveLength(2);
     for (const signal of signals) expect(signal).toBeInstanceOf(AbortSignal);
+  });
+});
+
+describe("an anime season named by its own title", () => {
+  const SHOW: Record<string, [string, number, number, number]> = {
+    // Anime Kitsu's entries for one show: name, IMDb season, its first IMDb episode, episodes.
+    base: ["Show", 1, 1, 12],
+    second: ["Show: Second Arc", 2, 1, 11],
+    third: ["Show: Third Arc", 3, 1, 11],
+    part: ["Show: Third Arc Part 2", 3, 12, 11]
+  };
+  /** The Anime Kitsu addon for a show with these entries (kitsu ids from `first` on), or failing. */
+  const kitsu = (imdbId: string, first: number, names: string[], fail = false) => (url: URL) => {
+    if (url.hostname !== "anime-kitsu.strem.fun") return undefined;
+    if (fail) return new Response("busy", { status: 503 });
+    if (url.pathname.includes("/catalog/")) return json({ metas: names.map((_, i) => ({ id: `kitsu:${first + i}`, type: "series", imdb_id: imdbId })) });
+    const index = Number(url.pathname.match(/kitsu:(\d+)\.json$/)?.[1]) - first;
+    const entry = SHOW[names[index]];
+    if (!entry) return undefined;
+    const [name, season, from, count] = entry;
+    return json({ meta: { name, aliases: [], imdb_id: imdbId, videos: Array.from({ length: count }, (_, i) => ({ episode: i + 1, imdbSeason: season, imdbEpisode: from + i })) } });
+  };
+  /** SubSource with one record per season (movieId base + season), these Arabic subtitles in each, and these downloads. */
+  const records = (url: URL, base: number, arabic: Record<number, unknown[]>, files: Record<string, Buffer> = {}, hits: number[] = []) => {
+    if (url.hostname !== "api.subsource.net") return undefined;
+    if (url.pathname.endsWith("/movies/search")) {
+      return json({ data: Object.keys(arabic).map((season) => ({ movieId: base + Number(season), title: "Show", type: "tvseries", season: Number(season), subtitleCount: 9 })) });
+    }
+    if (url.pathname.endsWith("/subtitles")) {
+      const season = Number(url.searchParams.get("movieId")) - base;
+      hits.push(season);
+      return json({ data: url.searchParams.get("language") === "arabic" ? (arabic[season] ?? []) : [], pagination: { pages: 1 } });
+    }
+    const download = url.pathname.match(/\/subtitles\/(\d+)\/download$/);
+    return download && files[download[1]] ? new Response(new Uint8Array(files[download[1]])) : undefined;
+  };
+  const arabic = (id: number, name: string, extra: Record<string, unknown> = {}) => sub(id, name, { language: "arabic", files: null, ...extra });
+  const settings = (key: string): Settings => ({ subsource: key, languages: ["Arabic"], allowMachine: false, hearingImpaired: "include" });
+
+  it("gives a second season's episode its own subtitle from a third season's record, not the first season's '- 03'", async () => {
+    sites((url) =>
+      records(url, 98100, {
+        1: [arabic(98111, "[Group] Show - 03 [1080p]")],
+        2: [],
+        3: [arabic(98131, "[Group] Show - 03"), arabic(98132, "[Group] Show: Second Arc - 03"), arabic(98133, "[Group] Show: Third Arc - 03")]
+      }) ??
+      kitsu("tt0000981", 9001, ["base", "second", "third"])(url) ??
+      cinemeta(url)
+    );
+    const answer = await list(settings("sk_season_title_0981"), "tt0000981:2:3");
+    expect(answer.subtitles.map(refOfTrack)).toEqual(["ss98132"]);
+    expect(answer.cacheMaxAge).toBe(300);
+    // The same record gives the first and third seasons their own.
+    expect((await list(settings("sk_season_title_0981"), "tt0000981:3:3")).subtitles.map(refOfTrack)).toEqual(["ss98133"]);
+    expect((await list(settings("sk_season_title_0981"), "tt0000981:1:3")).subtitles.map(refOfTrack)).toEqual(["ss98111"]);
+  });
+
+  it("searches every record of the show with a map, and only the first three without one", async () => {
+    const lists = { 1: [arabic(98211, "Show - 05")], 2: [], 3: [], 5: [arabic(98251, "Show: Second Arc - 05")] };
+    const hits: number[] = [];
+    sites((url) => records(url, 98200, lists, {}, hits) ?? kitsu("tt0000982", 9011, ["base", "second", "third"])(url) ?? cinemeta(url));
+    const answer = await list(settings("sk_all_records_00982"), "tt0000982:2:5");
+    expect(answer.subtitles.map(refOfTrack)).toEqual(["ss98251"]);
+    expect([...new Set(hits)].sort()).toEqual([1, 2, 3, 5]);
+
+    // The addon failing: no map, so everything goes as before. The fifth record isn't searched, and
+    // the first season's "- 05" is listed for any season, as it always was.
+    const without: number[] = [];
+    sites((url) => records(url, 98300, lists, {}, without) ?? kitsu("tt0000983", 9021, [], true)(url) ?? cinemeta(url));
+    const before = await list(settings("sk_no_map_key_000983"), "tt0000983:2:5");
+    expect(before.subtitles.map(refOfTrack)).toEqual(["ss98211"]);
+    expect([...new Set(without)].sort()).toEqual([1, 2, 3]);
+  });
+
+  it("downloads a part's episode from its pack by the part's own number", async () => {
+    const pack = new AdmZip();
+    for (let n = 1; n <= 11; n++) pack.addFile(`Show - Third Arc Part 2 - ${String(n).padStart(2, "0")}.srt`, Buffer.from(`1\n00:00:01,000 --> 00:00:02,000\npart two, episode ${n}\n`));
+    sites((url) =>
+      records(url, 98400, { 1: [], 3: [arabic(98431, "[Group] Show: Third Arc Part 2 [1 ~ 11]", { files: 11 })] }, { "98431": pack.toBuffer() }) ??
+      kitsu("tt0000984", 9031, ["base", "second", "third", "part"])(url) ??
+      cinemeta(url)
+    );
+    const answer = await list(settings("sk_part_pack_k_00984"), "tt0000984:3:13");
+    expect(answer.subtitles.map(refOfTrack)).toEqual(["ss98431"]);
+    const link = new URL(answer.subtitles[0].url);
+    expect(link.searchParams.get("pick")).toBe("2");
+    const download = await realFetch(answer.subtitles[0].url.replace("https://sync.example", base));
+    expect(await download.text()).toContain("part two, episode 2");
+  });
+});
+
+describe("a show that isn't anime", () => {
+  it("isn't looked up in the Anime Kitsu addon, and its list doesn't wait for it", async () => {
+    const hits = sites((url) => {
+      if (url.hostname === "v3-cinemeta.strem.io") return json({ meta: { country: "United States", genres: ["Drama"], name: "Show" } });
+      // Asked, it would answer too late for the list.
+      if (url.hostname === "anime-kitsu.strem.fun") return later(6000, () => json({ metas: [] }));
+      return subsource(url, { arabic: [sub(9901, "Show S01E05", { language: "arabic" })] }, {}, 118);
+    });
+    const answer = await list({ subsource: "sk_not_anime_key_018", languages: ["Arabic"], allowMachine: false, hearingImpaired: "include" }, "tt0000718:1:5");
+    expect(answer.subtitles.map(refOfTrack)).toEqual(["ss9901"]);
+    expect(answer.cacheMaxAge).toBe(300);
+    expect(hits.filter((h) => h.includes("anime-kitsu.strem.fun"))).toEqual([]);
   });
 });
