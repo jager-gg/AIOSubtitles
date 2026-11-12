@@ -432,11 +432,11 @@ export function statsPage(view: StatsView, signedIn = false): string {
 
   // ---------- sources and links ----------
   const used = (source: string) => (weekTotal[`api.${source}`] ?? 0) + (weekTotal[`fetch.${source}`] ?? 0) + (weekTotal[`errors.${source}`] ?? 0) > 0;
-  const sources = ["subsource", "subdl", "opensubtitles", "subtitlecat", "addons"]
+  const sources = ["subsource", "subdl", "opensubtitles", "subtitlecat", "thesubtitledb", "gestdown", "animetosho", "addons"]
     // Subtitle Cat (off unless a link turns it on) and other addons only when one was used this week.
     .filter((source) => (source !== "addons" && source !== "subtitlecat") || used(source))
     .map((source) => {
-      const label = { subsource: "SubSource", subdl: "SubDL", opensubtitles: "OpenSubtitles V3+", subtitlecat: "Subtitle Cat", addons: "Added addons" }[source];
+      const label = { subsource: "SubSource", subdl: "SubDL", opensubtitles: "OpenSubtitles V3+", subtitlecat: "Subtitle Cat", thesubtitledb: "TheSubtitleDB", gestdown: "Gestdown", animetosho: "Anime Tosho", addons: "Added addons" }[source];
       const fails = (weekTotal[`api.${source}.fail`] ?? 0) + (weekTotal[`errors.${source}`] ?? 0);
       return `<tr><th scope="row">${label}</th><td>${n(weekTotal[`api.${source}`] ?? 0)}</td><td>${n(weekTotal[`fetch.${source}`])}</td><td${fails ? ' class="bad"' : ""}>${n(fails)}</td></tr>`;
     })
@@ -535,7 +535,7 @@ export function statsPage(view: StatsView, signedIn = false): string {
     if (e.what && !group.what) group.what = e.what;
     groups.set(key, group);
   }
-  const WHERE: Record<string, string> = { sync: "Sync", request: "Request", download: "Download", subdl: "SubDL", subsource: "SubSource", opensubtitles: "OpenSubtitles", subtitlecat: "Subtitle Cat", addons: "Other addons" };
+  const WHERE: Record<string, string> = { sync: "Sync", request: "Request", download: "Download", subdl: "SubDL", subsource: "SubSource", opensubtitles: "OpenSubtitles", subtitlecat: "Subtitle Cat", thesubtitledb: "TheSubtitleDB", gestdown: "Gestdown", animetosho: "Anime Tosho", addons: "Other addons" };
   const errorRow = (g: ErrorGroup) => {
     const linkIds = [...g.links];
     const facts = [

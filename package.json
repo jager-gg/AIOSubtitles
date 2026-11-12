@@ -26,7 +26,8 @@
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "onnxruntime-web": "1.30.0"
+    "onnxruntime-web": "1.30.0",
+    "xz-decompress": "0.2.3"
   },
   "devDependencies": {
     "@types/adm-zip": "^0.5.8",

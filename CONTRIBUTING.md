@@ -38,6 +38,8 @@ See `scripts/replay.ts` and [docs/how-it-works.md](docs/how-it-works.md).
 | `src/profile.ts` | Per-link settings, encrypted into the link |
 | `src/configure.ts`, `src/page.ts` | The configure page: checks and HTML |
 | `src/sources.ts`, `src/subsource.ts`, `src/downloads.ts` | Subtitle sources, downloads and unpacking |
+| `src/thesubtitledb.ts`, `src/gestdown.ts`, `src/animetosho.ts` | The sources that need no key: TheSubtitleDB, Gestdown (Addic7ed's TV subtitles) and Anime Tosho (dub captions from anime releases' own tracks) |
+| `src/cinemeta.ts` | A title's name, year, TVDB id, genres and country from Cinemeta, shared by the sources (and whether it is anime) |
 | `src/matching.ts`, `src/quality.ts` | Episode matching and ranking |
 | `src/sync.ts`, `src/mkv.ts`, `src/vad.ts` | Reading the playing file and retiming subtitles |
 | `src/reads.ts` | Pausing reads when the file's host refuses, and the daily read limit |

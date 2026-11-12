@@ -4,7 +4,7 @@ A self-hosted Stremio subtitle addon for [AIOStreams](https://github.com/Viren07
 
 ## Features
 
-- **Several sources:** SubSource, SubDL, OpenSubtitles (no key needed), Subtitle Cat (off unless turned on, no key needed) and up to 3 other Stremio subtitle addons. All results are ranked together and the best one wins.
+- **Several sources:** SubSource, SubDL, OpenSubtitles, TheSubtitleDB, Gestdown (TV), Anime Tosho (anime dub captions), Subtitle Cat (off unless turned on) and up to 3 other Stremio subtitle addons. Only SubSource and SubDL need a key. All results are ranked together and the best one wins.
 - **English Dub captions:** subtitles transcribed from the English dub, so the words match the voices. Falls back to official English closed captions when no dub captions exist.
 - **Regular English too:** for watching in the original language, regular English subtitles timed to the original voices, as a separate choice.
 - **Other languages:** the best subtitle per language, official translations first, machine translations left out unless you allow them, and ranked below every other subtitle when you do.
@@ -17,7 +17,7 @@ A self-hosted Stremio subtitle addon for [AIOStreams](https://github.com/Viren07
 - Docker with Compose.
 - An AIOStreams install for each person: your own or a public instance. It's required, because sync uses it to find the file being played.
 - An address AIOStreams and your players can reach. Use https behind a reverse proxy if Stremio apps will use it; Stremio's web app only loads https subtitles.
-- A [SubSource](https://subsource.net/api) or [SubDL](https://subdl.com/panel/api) API key per person, or OpenSubtitles (no key).
+- Nothing, or a [SubSource](https://subsource.net/api) or [SubDL](https://subdl.com/panel/api) API key per person: OpenSubtitles, TheSubtitleDB, Gestdown and Anime Tosho need no key.
 
 Resource use is small: about 30 MB of memory idle. A new .mkv episode is usually read from its index: about 1 MB and a second. Other files cost about 10 s of CPU and roughly 14% of the file.
 
@@ -82,7 +82,7 @@ To keep it off the internet, run it on the same Docker network as AIOStreams and
 
 1. Open `/configure`.
 2. **Connect AIOStreams:** paste your AIOStreams install URL (in AIOStreams: **Save & install**, then copy it).
-3. **Choose your sources:** a SubSource or SubDL key, OpenSubtitles, Subtitle Cat, and/or other subtitle addons by manifest URL. Subtitle Cat finds uploads the other sites lack, such as fan translations, by name only, so one of its subtitles is listed only once it has synced to the playing file.
+3. **Choose your sources:** a SubSource or SubDL key, OpenSubtitles, TheSubtitleDB, Gestdown, Anime Tosho, Subtitle Cat, and/or other subtitle addons by manifest URL. TheSubtitleDB, Gestdown and Anime Tosho are on unless turned off. Subtitle Cat finds uploads the other sites lack, such as fan translations, by name only, so one of its subtitles is listed only once it has synced to the playing file.
 4. **Pick your languages:** **English Dub** gives captions written from the English dub, for watching dubbed. **English** gives regular subtitles, for watching in the original language. Every other language gets its best subtitle.
 5. **Set your filters:** machine translations, hearing-impaired subtitles, and the switches below.
 6. **Create your link**, then in AIOStreams: **Add addon → Custom**, paste the link as the manifest URL, resources: Subtitles.

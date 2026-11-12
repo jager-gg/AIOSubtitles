@@ -60,7 +60,7 @@ export interface SubSourceSubtitle {
   // Where it comes from. SubSource's own subtitles go by subtitleId alone.
   /** Source-tagged id for other sources ("sd…", "os…"); SubSource uses subtitleId. */
   ref?: string;
-  source?: "subsource" | "subdl" | "opensubtitles" | "addon" | "subtitlecat";
+  source?: "subsource" | "subdl" | "opensubtitles" | "addon" | "subtitlecat" | "thesubtitledb" | "gestdown" | "animetosho";
   /** An added addon's subtitle URL, sealed (see sealUrl): it may carry that addon's keys. */
   sealedUrl?: string;
   /** The source already searched for this episode, so the result is for it. */

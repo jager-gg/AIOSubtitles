@@ -14,6 +14,9 @@ import { utf16ToUtf8 } from "./text.js";
 import { count, noteError, noteKeyCall } from "./stats.js";
 import { downloadSubtitleArchive } from "./subsource.js";
 import { downloadSubtitleCat } from "./subtitlecat.js";
+import { downloadAnimeTosho } from "./animetosho.js";
+import { gestdownDownloadUrl } from "./gestdown.js";
+import { theSubtitleDbDownloadUrl } from "./thesubtitledb.js";
 import { openSubtitlesDownloadUrl, repairOpenSubtitlesVtt, subdlDownloadUrl } from "./sources.js";
 import { bareEpisodeMarkerMatches, bareNumbers, episodeMarkerMatches, extractEpisodeMarkers, extractEpisodeRange, fileLooksLikeSubtitle } from "./matching.js";
 
@@ -56,6 +59,16 @@ async function fetchSource(ref: string, keys: SourceKeys): Promise<Buffer> {
     return body[0] === 0x1f && body[1] === 0x8b ? gunzipSync(body, { maxOutputLength: 20_000_000 }) : body;
   }
   if (ref.startsWith("sc")) return downloadSubtitleCat(ref);
+  if (ref.startsWith("at")) return downloadAnimeTosho(ref);
+  if (ref.startsWith("tb") || ref.startsWith("gd")) {
+    // The keyless sources' links lead on to hosts they choose (TheSubtitleDB's to its file store), so
+    // each hop is checked like an addon's, and a body far bigger than a subtitle is refused.
+    const free = ref.startsWith("tb") ? theSubtitleDbDownloadUrl(ref) : gestdownDownloadUrl(ref);
+    if (!free) throw new Error(`unknown subtitle ${ref}`);
+    const response = await fetchPublic(free, 20000, { headers: { "user-agent": "AIOSubtitles" } });
+    if (!response.ok) throw new Error(`download of ${ref} failed: HTTP ${response.status}`);
+    return readCapped(response, 10_000_000);
+  }
   let url: string | undefined;
   if (ref.startsWith("sd")) {
     if (!keys.subdl) throw new Error("no SubDL key for this subtitle");
@@ -85,7 +98,7 @@ async function ensureDownloadCached(ref: string, keys: SourceKeys): Promise<stri
   const file = downloadFile(ref);
   if (!(await exists(file))) {
     // One real download from a source; a cached file costs nothing.
-    const source = /^(?:ss)?\d+$/.test(ref) ? "subsource" : ref.startsWith("sd") ? "subdl" : ref.startsWith("os") ? "opensubtitles" : ref.startsWith("sc") ? "subtitlecat" : "addons";
+    const source = /^(?:ss)?\d+$/.test(ref) ? "subsource" : ref.startsWith("sd") ? "subdl" : ref.startsWith("os") ? "opensubtitles" : ref.startsWith("sc") ? "subtitlecat" : ref.startsWith("tb") ? "thesubtitledb" : ref.startsWith("gd") ? "gestdown" : ref.startsWith("at") ? "animetosho" : "addons";
     count(`fetch.${source}`);
     try {
       await writeFile(file, await fetchSource(ref, keys));

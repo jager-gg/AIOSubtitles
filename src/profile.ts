@@ -41,6 +41,12 @@ export interface Profile {
   opensubtitles: boolean;
   /** Subtitle Cat (no key): uploads found by name, listed only once synced to the playing file. */
   subtitlecat: boolean;
+  /** TheSubtitleDB (no key), by IMDb id. */
+  thesubtitledb: boolean;
+  /** Gestdown (no key): Addic7ed's TV subtitles. */
+  gestdown: boolean;
+  /** Anime Tosho (no key): dub captions from anime releases' own tracks. */
+  animetosho: boolean;
   /** Other Stremio subtitle addons asked too. */
   addons: Addon[];
   /** AIOStreams install URL used to find the playing file, as reached from here; no sync without it. */
@@ -74,6 +80,10 @@ export interface Settings {
   opensubtitles?: boolean;
   /** Subtitle Cat, which needs no key. Off unless a link turns it on. */
   subtitlecat?: boolean;
+  /** TheSubtitleDB, Gestdown and Anime Tosho, which need no key: on unless a link turns them off (false). */
+  thesubtitledb?: boolean;
+  gestdown?: boolean;
+  animetosho?: boolean;
   /** Other Stremio subtitle addons, by manifest URL. */
   addons?: Addon[];
   /** AIOStreams install URL (https://<allowed host>/stremio/<uuid>/<password>/manifest.json); no sync without it. */
@@ -122,8 +132,9 @@ export function settingsProblem(s: Settings): string | undefined {
   if (addons.some((a) => typeof a?.name !== "string" || a.name.length > 60 || typeof a.url !== "string" || a.url.length > 2048 || !/^https:\/\/\S+\/manifest\.json$/.test(a.url))) {
     return "Other addons: each must be an https manifest URL ending in /manifest.json";
   }
-  if (!s.subsource && !s.subdl && !s.opensubtitles && addons.length === 0) {
-    return `Sources: ${s.subtitlecat ? "Subtitle Cat needs another source beside it. " : ""}Add a SubSource or SubDL key, turn on OpenSubtitles, or add an addon`;
+  // TheSubtitleDB and Gestdown search by id on their own; Subtitle Cat (by name) and Anime Tosho (anime dub captions) need another beside them.
+  if (!s.subsource && !s.subdl && !s.opensubtitles && s.thesubtitledb === false && s.gestdown === false && addons.length === 0) {
+    return `Sources: ${s.subtitlecat || s.animetosho !== false ? "Subtitle Cat and Anime Tosho need another source beside them. " : ""}Add a SubSource or SubDL key, turn on OpenSubtitles, TheSubtitleDB or Gestdown, or add an addon`;
   }
   if (s.aiostreams && !parseAiostreamsUrl(s.aiostreams)) {
     return "AIOStreams install URL: must end in /manifest.json and come from a supported AIOStreams instance";
@@ -213,6 +224,10 @@ export function profileFromSettings(settings: Settings, token: string): Profile 
     subdlKey: settings.subdl || undefined,
     opensubtitles: settings.opensubtitles === true,
     subtitlecat: settings.subtitlecat === true,
+    // The free sources are on unless a link turns them off.
+    thesubtitledb: settings.thesubtitledb !== false,
+    gestdown: settings.gestdown !== false,
+    animetosho: settings.animetosho !== false,
     addons: settings.addons ?? [],
     // This server's own instance is looked up inside the Docker network; others over the internet.
     aiostreamsUrl: aio ? `${own ? config.aiostreamsBase : aio.origin}${aio.path}/manifest.json` : undefined,
@@ -344,6 +359,9 @@ export function linkSummary(token: string): LinkSummary | undefined {
     ...(s.subdl ? ["SubDL"] : []),
     ...(s.opensubtitles ? ["OpenSubtitles"] : []),
     ...(s.subtitlecat === true ? ["Subtitle Cat"] : []),
+    ...(s.thesubtitledb !== false ? ["TheSubtitleDB"] : []),
+    ...(s.gestdown !== false ? ["Gestdown"] : []),
+    ...(s.animetosho !== false ? ["Anime Tosho"] : []),
     ...(addons ? [addons === 1 ? "1 addon" : `${addons} addons`] : [])
   ];
   return {

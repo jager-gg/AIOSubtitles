@@ -15,7 +15,10 @@ import { checkStep, configurePage, saveConfiguration } from "./configure.js";
 import { kitsuToImdb, seasonMap } from "./ids.js";
 import { absoluteEpisode, findCandidateMovies, FIRST_RECORDS, getSubtitlesIn, madeInEnglish } from "./subsource.js";
 import { subtitleCatSubtitles, titleOf } from "./subtitlecat.js";
+import { animeToshoSubtitles } from "./animetosho.js";
 import { isAnime, metaOf } from "./cinemeta.js";
+import { gestdownSubtitles } from "./gestdown.js";
+import { theSubtitleDbSubtitles } from "./thesubtitledb.js";
 import { decodeSubtitle } from "./text.js";
 import { toSrt } from "./srt.js";
 import { tierName, type QualityTier } from "./quality.js";
@@ -375,11 +378,34 @@ function addonRoutes(): express.Router {
       profile.dub && stremioRequest.imdbId && !stremioRequest.id.startsWith("kitsu") ? madeInEnglish(stremioRequest.type, stremioRequest.imdbId) : Promise.resolve(false),
       undefined
     );
+    /** Anime Tosho is asked about anime only: a Kitsu id, a show with a season map, or Cinemeta's animation from anime countries. */
+    async function animeToshoJob() {
+      // Its own copy, taken before any wait: the list's request is changed later (its absolute episode
+      // is set once known), at a moment this job can't see. The absolute episode is waited for here instead.
+      const request = { ...stremioRequest };
+      const [meta, map, counted] = await Promise.all([metaOf(request.type, imdbId), seasonMapJob, absolute]);
+      if (counted !== undefined) request.absoluteEpisode = counted;
+      if (!map && !request.id.startsWith("kitsu") && !isAnime(meta)) return [];
+      const found = await animeToshoSubtitles(request, meta?.name ?? map?.show, map);
+      // A show with dub releases there: the next episode is looked into now, so its first list has them.
+      // Its own count across the show isn't known, so this one's isn't carried over.
+      const next = /^(tt\d+):(\d+):(\d+)$/.exec(request.id);
+      if (found.length && next) {
+        const episode = Number(next[3]) + 1;
+        const ahead = { ...request, id: `${next[1]}:${next[2]}:${episode}`, episode, absoluteEpisode: undefined, filename: undefined, videoHash: undefined, videoSize: undefined };
+        void animeToshoSubtitles(ahead, meta?.name ?? map?.show, map).catch(() => undefined);
+      }
+      return found;
+    }
     // The other sources are asked once for every language this person wants, each waited on by itself.
     const othersJob = Promise.all([
       inTime(profile.subdlKey ? subdlSubtitles(profile.subdlKey, stremioRequest, wanted) : Promise.resolve([]), []),
       inTime(profile.opensubtitles ? openSubtitles(stremioRequest, wanted, profile.allowMachine) : Promise.resolve([]), []),
       inTime(profile.subtitlecat ? subtitleCatSubtitles(stremioRequest, wanted) : Promise.resolve([]), []),
+      inTime(profile.thesubtitledb ? theSubtitleDbSubtitles(stremioRequest, wanted) : Promise.resolve([]), []),
+      inTime(profile.gestdown ? gestdownSubtitles(stremioRequest, wanted) : Promise.resolve([]), []),
+      // Dub captions from anime releases' own tracks (animetosho.ts): anime only, when dub captions are wanted.
+      inTime(profile.animetosho && profile.dub ? animeToshoJob() : Promise.resolve([]), []),
       ...profile.addons.map((addon) => inTime(addonSubtitles(addon, stremioRequest, wanted), []))
     ]);
     /**

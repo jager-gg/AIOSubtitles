@@ -65,7 +65,7 @@ describe("usage and health", () => {
     // Each link it has seen: its settings, without its keys, and Edit to its configure page.
     expect(html).toContain(`href="/${token}/configure"`);
     expect(html).toContain("English Dub and Arabic");
-    expect(html).toContain("SubSource and OpenSubtitles");
+    expect(html).toContain("SubSource, OpenSubtitles, TheSubtitleDB, Gestdown and Anime Tosho");
     expect(html).toContain("No HI");
     expect(html).toContain("No sync");
     expect(html).not.toContain("sk_dashboard_test_key_1234");

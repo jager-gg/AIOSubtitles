@@ -103,6 +103,10 @@ function draft(input: ConfigureInput, addons: Addon[], current?: Settings): Sett
     opensubtitles: input.opensubtitles === true,
     // Kept only when on: off is what a link without it means.
     ...(input.subtitlecat === true ? { subtitlecat: true } : {}),
+    // On unless turned off: only an explicit false is kept, so links made before these sources have them on.
+    ...(input.thesubtitledb === false ? { thesubtitledb: false } : {}),
+    ...(input.gestdown === false ? { gestdown: false } : {}),
+    ...(input.animetosho === false ? { animetosho: false } : {}),
     ...(addons.length ? { addons } : {}),
     aiostreams: keepOrReplace(input.aiostreams, current?.aiostreams),
     languages: [...new Set((input.languages ?? []).map((l) => String(l).trim()).filter(Boolean))],

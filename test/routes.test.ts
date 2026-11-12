@@ -50,7 +50,7 @@ describe("settings in the manifest URL", () => {
     expect(problem({ ...settings, aiostreams: "https://aiostreams.example.com/stremio/a/b" })).toMatch(/AIOStreams/);
     expect(problem({ ...settings, aiostreams: undefined })).toBeUndefined();
     expect(problem({ ...settings, languages: [] })).toMatch(/Languages/);
-    expect(problem({ ...settings, subsource: "" })).toMatch(/SubSource/);
+    expect(problem({ ...settings, subsource: "", thesubtitledb: false, gestdown: false })).toMatch(/SubSource/);
   });
 });
 
@@ -93,9 +93,11 @@ describe("routes", () => {
     expect(((await noSync.json()) as { error: string }).error).toMatch(/^AIOStreams install URL: needed/);
     const sync = await post("/configure/check", { step: "sync", aiostreams: "" });
     expect(((await sync.json()) as { error: string }).error).toMatch(/^AIOStreams/);
-    const sources = await post("/configure/check", { step: "sources", opensubtitles: false });
+    const sources = await post("/configure/check", { step: "sources", opensubtitles: false, thesubtitledb: false, gestdown: false });
     expect(((await sources.json()) as { error: string }).error).toMatch(/^Sources:/);
     expect((await post("/configure/check", { step: "sources", opensubtitles: true })).status).toBe(200);
+    // The free sources are on unless turned off: they alone are enough.
+    expect((await post("/configure/check", { step: "sources", opensubtitles: false })).status).toBe(200);
     expect((await post("/configure/check", { step: "languages", languages: [] })).status).toBe(400);
     expect((await post("/configure/check", { step: "name", label: "Sara's TV" })).status).toBe(200);
     expect((await post("/configure/check", { step: "name", label: "<script>" })).status).toBe(400);
@@ -118,7 +120,10 @@ describe("sources and instances in the settings", () => {
   it("needs at least one source, and SubSource is optional", () => {
     expect(problem({ ...settings, subsource: undefined, opensubtitles: true })).toBeUndefined();
     expect(problem({ ...settings, subsource: undefined, subdl: "subdl_key_123456" })).toBeUndefined();
-    expect(problem({ ...settings, subsource: undefined })).toMatch(/Sources/);
+    expect(problem({ ...settings, subsource: undefined, thesubtitledb: false, gestdown: false })).toMatch(/Sources/);
+    // TheSubtitleDB or Gestdown alone is enough; Anime Tosho (anime dub captions) alone isn't.
+    expect(problem({ ...settings, subsource: undefined })).toBeUndefined();
+    expect(problem({ ...settings, subsource: undefined, thesubtitledb: false })).toBeUndefined();
   });
 });
 
@@ -334,11 +339,11 @@ describe("the link the dashboard's Edit opens", () => {
 describe("the configure page's words", () => {
   it("name every source, show the labels players get, and say Subtitle Cat needs company", async () => {
     const html = await (await fetch(`${base}/configure`)).text();
-    expect(html).toContain("SubSource, SubDL, OpenSubtitles, Subtitle Cat and your own addons.");
+    expect(html).toContain("SubSource, SubDL, OpenSubtitles, TheSubtitleDB, Gestdown, Anime Tosho, Subtitle Cat and your own addons.");
     expect(html).toContain("English<small>Dub · Synced · AIOSubtitles</small>");
     expect(html).not.toContain("English Dub<small>");
     expect(html).toContain("works beside at least one other source");
-    expect(problem({ ...settings, subsource: undefined, subtitlecat: true })).toBe("Sources: Subtitle Cat needs another source beside it. Add a SubSource or SubDL key, turn on OpenSubtitles, or add an addon");
-    expect(problem({ ...settings, subsource: undefined })).toBe("Sources: Add a SubSource or SubDL key, turn on OpenSubtitles, or add an addon");
+    expect(problem({ ...settings, subsource: undefined, subtitlecat: true, thesubtitledb: false, gestdown: false })).toBe("Sources: Subtitle Cat and Anime Tosho need another source beside them. Add a SubSource or SubDL key, turn on OpenSubtitles, TheSubtitleDB or Gestdown, or add an addon");
+    expect(problem({ ...settings, subsource: undefined, thesubtitledb: false, gestdown: false, animetosho: false })).toBe("Sources: Add a SubSource or SubDL key, turn on OpenSubtitles, TheSubtitleDB or Gestdown, or add an addon");
   });
 });

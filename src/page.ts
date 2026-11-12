@@ -140,7 +140,7 @@ function featuresPanel(editing: boolean, open: boolean): string {
   const perks = `<ul class="perks">
       ${perk("star", "Real translations first", "Official, then made by people. No machine or AI unless you allow it.")}
       ${perk("target", "Made for your copy", "Subtitles from the same group or streaming service win.")}
-      ${perk("layers", "Many sources, one pick", "SubSource, SubDL, OpenSubtitles, Subtitle Cat and your own addons.")}
+      ${perk("layers", "Many sources, one pick", "SubSource, SubDL, OpenSubtitles, TheSubtitleDB, Gestdown, Anime Tosho, Subtitle Cat and your own addons.")}
       ${perk("hash", "Knows anime numbering", "Episode 113 or season 2 episode 13, season packs too.")}
       ${perk("tag", "Honest labels", "One that can't be synced to your file says so, or is left out if you choose.")}
       ${perk("play", "Works where you watch", "Through AIOStreams, in Stremio, Jellyfin and other players.")}
@@ -159,6 +159,10 @@ export function configurePage(current?: Settings, signedIn = false): string {
   const hi = current?.hearingImpaired ?? "include";
   const openSubtitlesOn = current ? current.opensubtitles === true : true;
   const subtitleCatOn = current?.subtitlecat === true;
+  // On unless a link turned them off, links made before them included.
+  const theSubtitleDbOn = current?.thesubtitledb !== false;
+  const gestdownOn = current?.gestdown !== false;
+  const animeToshoOn = current?.animetosho !== false;
   // The public instances a link may use, each opening its own site (where Save & install is) in a new tab.
   // This server's own AIOStreams comes first, when it has one.
   const instanceLinks = [...(config.ownAiostreams ? [config.ownAiostreams] : []), ...PUBLIC_AIOSTREAMS.filter((o) => config.allowedAiostreams.includes(o) && o !== config.ownAiostreams)]
@@ -231,7 +235,10 @@ export function configurePage(current?: Settings, signedIn = false): string {
         ${secretRow({ name: "subsource", label: "SubSource API key", placeholder: "sk_…", saved: Boolean(current?.subsource), help: 'Optional. From <a href="https://subsource.net/api" target="_blank" rel="noopener">subsource.net/api</a>.', removeLabel: "Stop using SubSource", letters: "SS" })}
         ${secretRow({ name: "subdl", label: "SubDL API key", placeholder: "Your SubDL key", saved: Boolean(current?.subdl), help: 'Optional. From <a href="https://subdl.com/panel/api" target="_blank" rel="noopener">subdl.com/panel/api</a>. Often has dub caption packs.', removeLabel: "Stop using SubDL", letters: "SD" })}
         ${switchRow("opensubtitles", "OpenSubtitles", "Through OpenSubtitles V3+. No key needed.", openSubtitlesOn, "OS")}
-        ${switchRow("subtitlecat", "Subtitle Cat", "Uploads the other sites lack, such as fan translations. Found by name, so one is listed only once it has synced to your file. No key needed; works beside at least one other source.", subtitleCatOn, "SC")}`) +
+        ${switchRow("subtitlecat", "Subtitle Cat", "Uploads the other sites lack, such as fan translations. Found by name, so one is listed only once it has synced to your file. No key needed; works beside at least one other source.", subtitleCatOn, "SC")}
+        ${switchRow("thesubtitledb", "TheSubtitleDB", "Films and series in many languages, by IMDb id. No key needed.", theSubtitleDbOn, "TD")}
+        ${switchRow("gestdown", "Gestdown", "Addic7ed's TV subtitles. Series only. No key needed.", gestdownOn, "GD")}
+        ${switchRow("animetosho", "Anime Tosho", "English Dub captions from anime releases' own caption tracks, when the sites have none. Anime only, with English Dub chosen. No key needed.", animeToshoOn, "AT")}`) +
       card("Other subtitle addons", "Optional. Any Stremio subtitle addon is asked too, and what it finds is ranked and synced.", `
         ${addonRows}
         <details class="item more"${savedAddons.length ? " open" : ""}>
@@ -733,6 +740,9 @@ ${instancesDialog}
       subdl: value("subdl"),
       opensubtitles: data.get("opensubtitles") === "on",
       subtitlecat: data.get("subtitlecat") === "on",
+      thesubtitledb: data.get("thesubtitledb") === "on",
+      gestdown: data.get("gestdown") === "on",
+      animetosho: data.get("animetosho") === "on",
       addAddons: String(data.get("addAddons") || ""),
       removeAddons: [...document.querySelectorAll("[data-addon].removing")].map((row) => Number(row.dataset.addon)),
       aiostreams: value("aiostreams"),
@@ -803,7 +813,7 @@ ${instancesDialog}
     const syncOn = present("aiostreams");
     const syncChecked = syncOn && b.aiostreams === checkedAio;
     set("sync", !syncOn ? "Not connected yet" : syncChecked ? "On, to the file you play" : "Checked when you move on", syncOn ? "" : "warn", !syncOn ? "Needed" : syncChecked ? "Connected" : "Not checked yet");
-    const sites = [present("subsource") && "SubSource", present("subdl") && "SubDL", b.opensubtitles && "OpenSubtitles", b.subtitlecat && "Subtitle Cat"].filter(Boolean);
+    const sites = [present("subsource") && "SubSource", present("subdl") && "SubDL", b.opensubtitles && "OpenSubtitles", b.subtitlecat && "Subtitle Cat", b.thesubtitledb && "TheSubtitleDB", b.gestdown && "Gestdown", b.animetosho && "Anime Tosho"].filter(Boolean);
     const addons = document.querySelectorAll("[data-addon]:not(.removing)").length + b.addAddons.split(/\\s+/).filter(Boolean).length;
     const total = sites.length + addons;
     if (addons) sites.push(addons === 1 ? "1 addon" : addons + " addons");
@@ -854,7 +864,7 @@ ${instancesDialog}
   function localProblem(id, b) {
     if (id === "sync" && !present("aiostreams")) return "AIOStreams install URL: needed. Paste the install link from AIOStreams";
     if (id === "sync" && b.aiostreams && b.aiostreams !== "remove" && !/\\/manifest\\.json$/.test(b.aiostreams)) return "AIOStreams install URL: it ends in /manifest.json";
-    if (id === "sources" && !present("subsource") && !present("subdl") && !b.opensubtitles && !document.querySelectorAll("[data-addon]:not(.removing)").length && !b.addAddons.trim()) return "Sources: " + (b.subtitlecat ? "Subtitle Cat needs another source beside it. " : "") + "Add a SubSource or SubDL key, turn on OpenSubtitles, or add an addon";
+    if (id === "sources" && !present("subsource") && !present("subdl") && !b.opensubtitles && !b.thesubtitledb && !b.gestdown && !document.querySelectorAll("[data-addon]:not(.removing)").length && !b.addAddons.trim()) return "Sources: " + (b.subtitlecat || b.animetosho ? "Subtitle Cat and Anime Tosho need another source beside them. " : "") + "Add a SubSource or SubDL key, turn on OpenSubtitles, TheSubtitleDB or Gestdown, or add an addon";
     if (id === "languages" && !b.languages.length) return "Languages: pick at least one";
     return "";
   }
