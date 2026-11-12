@@ -11,7 +11,9 @@
     "test": "vitest run test",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "replay": "tsx scripts/replay.ts",
-    "bench": "tsx scripts/bench.ts"
+    "score": "tsx scripts/score.ts",
+    "bench": "tsx scripts/bench.ts",
+    "negatives": "tsx scripts/score.ts --negatives"
   },
   "keywords": [
     "stremio",

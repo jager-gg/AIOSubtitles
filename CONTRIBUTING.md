@@ -46,7 +46,7 @@ See `scripts/replay.ts` and [docs/how-it-works.md](docs/how-it-works.md).
 | `src/stats.ts`, `src/statsPage.ts` | Dashboard numbers and HTML |
 | `src/ui.ts` | Styles and icons shared by the pages |
 | `test/` | Vitest tests |
-| `scripts/` | Replay check and speech-detector evaluation |
+| `scripts/` | Replay check, sync score (`npm run score`, see [docs/scoring.md](docs/scoring.md)), the cross check of subtitles that aren't the file's (`npm run negatives`, same page), sync benchmark (`npm run bench`, see [docs/benchmark.md](docs/benchmark.md)) and speech-detector evaluation |
 
 ## Rules
 

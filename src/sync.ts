@@ -3009,7 +3009,7 @@ export function wholeFile(found: FileAnchors, captions: Cue[], shift: (start: nu
  * window is measured only where the captions have lines near the file's own; with fewer than 3 they
  * judge nothing at all. So a subtitle that meets only a stretch of the file passed them on the few
  * windows it met, at chance shifts. Over every played file with every cached subtitle the data shows
- * to be another's (a cross check over the stored plays), 63 of 11,767 were served as synced that way,
+ * to be another's (npm run negatives, docs/scoring.md), 63 of 11,767 were served as synced that way,
  * all by a shift per stretch: a film's subtitle on episodes (93 to 107 minutes of lines on 24 to 57;
  * one of 30 lines over 2.6 minutes on 25 episodes), episodes of 42 to 56 minutes on ones of 19 to 24,
  * and 12 to 22 minutes of lines on files of 24 to 155 minutes. A subtitle of the file is all of it:

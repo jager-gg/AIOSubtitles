@@ -779,8 +779,8 @@ export const SCENARIOS: Scenario[] = [
   // ---------- not this file's, met in one stretch of the file only ----------
   // A subtitle with a third to half as many lines a minute as the file's track overlaps few of its
   // windows well enough to be measured at all, and the tests of the measured windows judge nothing
-  // below three. These are what the cross check over the stored plays found served as synced:
-  // a film's subtitle on an episode, an episode's on a film, a short subtitle on
+  // below three. These are what the cross check over the stored plays found served as synced
+  // (docs/scoring.md): a film's subtitle on an episode, an episode's on a film, a short subtitle on
   // a longer file and the reverse, a longer cut's. Each one here was served as synced before
   // accountsForFile.
   {

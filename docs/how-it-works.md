@@ -103,6 +103,8 @@ A subtitle that fails is left as it came and listed as not synced, after the oth
 
 These tests judge the timing a subtitle was found to belong by. A translation is then timed more closely by the file's line starts ([a shift per stretch, by line starts](#a-shift-per-stretch-by-line-starts)), which never makes a subtitle count as synced, but can join two stretches and move one by a few seconds. That timing must pass the first two tests too, or the one it refined is served.
 
+On the stored plays, every played file was synced with every cached subtitle the data shows to be another episode's or another title's ([cross check](scoring.md#cross-check-subtitles-that-arent-the-files)): 63 of 11,767 had been served as synced, and none is now. The file's own subtitles start within it (99% of their lines at least), have lines in 96% of its points at least, and their timing rests on 79% of them at least; every one that synced still does, timed as before the test (it changes no timing, it only refuses).
+
 ### Timing line by line
 
 Some subtitles are the file's own dialogue, line for line, but were timed by hand to another recording (a cinema recording, say), so every line sits a little differently and no shift fits. On a Matroska file timed from its index, every line of its subtitle tracks is known, so such a subtitle can take its timing from them directly (`src/align.ts`).
@@ -267,5 +269,7 @@ Counts are written to `cache/stats/<date>.json` every minute and on shutdown. AP
 ## Replay check
 
 `npm run replay` reruns the sync decisions over every past play in a server's cache and shows what a code change would alter. It pulls the cache over ssh: `REPLAY_HOST=<ssh host> npm run replay` (set `REPLAY_CONTAINER` if the container isn't named `aiosubtitles`). Its data stays in the gitignored `.replay/` folder. See `scripts/replay.ts`.
+
+`npm run score` runs the same plays through the whole sync offline and measures how close the served lines land to the file's own lines. With `--holdout 5` it hides every fifth of those lines from the sync and judges by them alone, for the steps that time a subtitle by the very lines it is judged by: see [scoring.md](scoring.md). `npm run negatives` syncs every played file with every cached subtitle that is another's, and lists each one served as synced: there must be none ([cross check](scoring.md#cross-check-subtitles-that-arent-the-files)).
 
 `npm run bench` serves made-up plays through the sync (a shifted release, a cut that steps, another frame rate, a recap, dub captions and their voices, a hand-timed film, another episode's subtitle) and scores each line against where it belongs: see [benchmark.md](benchmark.md).

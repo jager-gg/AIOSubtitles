@@ -159,7 +159,7 @@ Dub captions come in two models:
 
 **Not this file's, met in one stretch of it only: never served as synced**
 
-A subtitle with a third to half as many lines a minute as the file's track overlaps few of the file's windows well enough to be measured, and the tests of measured windows judge nothing below three. Each of these was served as synced before every timing had to account for the whole file ([how it works](how-it-works.md#subtitles-that-dont-belong-to-the-file)).
+A subtitle with a third to half as many lines a minute as the file's track overlaps few of the file's windows well enough to be measured, and the tests of measured windows judge nothing below three. Each of these was served as synced before every timing had to account for the whole file ([how it works](how-it-works.md#subtitles-that-dont-belong-to-the-file)); they stand for what the [cross check](scoring.md#cross-check-subtitles-that-arent-the-files) found on the stored plays.
 
 | Scenario | What it stands for |
 |---|---|
@@ -187,3 +187,5 @@ Add it to `test/scenarios.ts` with a short name, a sentence on what it stands fo
 ## What it doesn't show
 
 The scenarios are made up: they show what a change does to each kind of case, not how often each kind comes up. The replay check (`npm run replay`) runs a change over real past plays, and the two are best run together.
+
+Unlike the [sync score](scoring.md), the benchmark knows where every line belongs, so a line moved onto the wrong line of the file counts as wrong here. That makes it the check for steps that move single lines onto the file's own, which the score, judging by those same lines, can't vouch for (see [held-out lines](scoring.md#held-out-lines)).

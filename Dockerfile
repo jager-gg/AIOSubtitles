@@ -5,6 +5,9 @@ RUN npm ci
 COPY tsconfig*.json vitest.config.ts ./
 COPY src ./src
 COPY test ./test
+# The tests import scripts/score-metrics.ts (the score's line measures) and scripts/cross-pairs.ts
+# (the cross check's pairs), so scripts/ is copied for them; nothing in it ships.
+COPY scripts ./scripts
 # The logo routes are tested too. (Logo drafts are left out by .dockerignore.)
 COPY assets ./assets
 RUN npx vitest run test && npm run build && npm prune --omit=dev
