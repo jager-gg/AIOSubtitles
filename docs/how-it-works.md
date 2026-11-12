@@ -94,7 +94,9 @@ It is used only when the pairing is beyond doubt: at least 60 lines on each side
 
 AIOStreams waits 7 s for subtitles. Every source is searched at once and waited on by itself, and the list is answered within 4 s with whatever has arrived; slower searches continue and are cached for the next request. A source that fails (SubSource refusing a key, say) is left out of that list, and noted on the dashboard. A list missing a source that was late is sent with a 30-second cache instead of 5 minutes.
 
-Sync starts when the list is requested. On a file timed by its own subtitle track, the list waits for the syncs within those 4 s, so the first list already says which tracks synced and can list a fallback in place of a subtitle that doesn't fit. A list whose syncs weren't all finished in time is also sent with a 30-second cache.
+Sync starts when the list is requested, and so does the read of the playing file's header. With "Skip languages the file already has" on, a first play's list leaves out the languages the file has full text subtitles in once they are known: for a Matroska file, from one read of its first 512 KB, which is done well before the full header check (waited on as long as that one). A list answered before either is done lists them.
+
+On a file timed by its own subtitle track, the list waits for the syncs within those 4 s, so the first list already says which tracks synced and can list a fallback in place of a subtitle that doesn't fit. A list whose syncs weren't all finished in time is also sent with a 30-second cache.
 
 A download never takes more than 8 s from the moment it's asked for, fetching the subtitle and trying fallbacks included: it waits up to 5 s for the sync, then gets the timing from the first pass, or the original file. Either stand-in isn't cached, so the next request gets the finished sync. Players give up on a subtitle that takes about 10 s and show nothing.
 

@@ -11,6 +11,7 @@ import path from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Settings } from "../src/profile.js";
 import type { Cue } from "../src/sync.js";
+import { ASS_HEADER, ASS_LINES, release } from "./mkvfile.js";
 
 const CACHE = ".cache-lists-test";
 const AIO = "https://aiostreams.example.com/stremio/list-test-uuid/pass/manifest.json";
@@ -461,4 +462,35 @@ describe("a show that isn't anime", () => {
     expect(answer.cacheMaxAge).toBe(300);
     expect(hits.filter((h) => h.includes("anime-kitsu.strem.fun"))).toEqual([]);
   });
+});
+
+describe("a first play's list", () => {
+  it("leaves out a language the playing file has, known from the quick read of its first part", async () => {
+    const filename = "Show.S01E05.Langs.mkv";
+    const file = release({ codecPrivate: ASS_HEADER, lines: ASS_LINES, name: "Arabic", language: "ara" });
+    const reads: string[] = [];
+    sites((url, init) => {
+      // AIOStreams lists the file; its host answers range reads. The full header check (ffprobe) can't
+      // read it here, so only the quick read of its first part knows its languages.
+      if (url.hostname === "aiostreams.example.com") return json({ streams: [{ url: "https://files.example/langs.mkv", behaviorHints: { filename } }] });
+      if (url.hostname === "files.example") {
+        const range = new Headers(init?.headers).get("range") ?? "";
+        reads.push(range);
+        const m = /bytes=(\d+)-(\d+)/.exec(range);
+        const from = Number(m?.[1] ?? 0);
+        const to = Math.min(Number(m?.[2] ?? file.length - 1), file.length - 1);
+        const response = new Response(new Uint8Array(file.subarray(from, to + 1)), { status: 206 });
+        Object.defineProperty(response, "url", { value: url.href });
+        return response;
+      }
+      return subsource(url, { arabic: [sub(9911, "Show S01E05", { language: "arabic" })], dutch: [sub(9912, "Show S01E05", { language: "dutch" })] }, {}, 119);
+    });
+    const settings: Settings = { subsource: "sk_file_langs_key_19", aiostreams: AIO, languages: ["Arabic", "Dutch"], allowMachine: false, hearingImpaired: "include" };
+    const answer = await list(settings, "tt0000719:1:5", playing(filename));
+    expect(reads.some((r) => r.startsWith("bytes=0-") && r !== "bytes=0-0")).toBe(true);
+    expect(answer.subtitles.map((t) => [t.lang, refOfTrack(t)])).toEqual([["Dutch", "ss9912"]]);
+    // Asked to keep the file's own languages too, the link lists it.
+    const kept = await list({ ...settings, keepEmbedded: true }, "tt0000719:1:5", playing(filename));
+    expect(kept.subtitles.map((t) => t.lang).sort()).toEqual(["Arabic", "Dutch"]);
+  }, 15000);
 });

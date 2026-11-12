@@ -17,7 +17,7 @@ import { cacheKey, cachePath } from "./cache.js";
 import { decodeSubtitle } from "./text.js";
 import { count, noteError, scrub } from "./stats.js";
 import { heardSpeech } from "./vad.js";
-import { dialogueLines, pictureLines, readMkvTiming } from "./mkv.js";
+import { dialogueLines, isTextCodec, pictureLines, readMkvTiming, readMkvTracks, type MkvTrack } from "./mkv.js";
 import { timingByLines } from "./align.js";
 import { checkReads, noteRead, noteReadOk, noteRefusal, ReadsPaused, refusalStatus } from "./reads.js";
 
@@ -1280,6 +1280,18 @@ async function resolvePlayback(aiostreamsUrl: string, videoId: string, type: str
 const PLAYBACK_KEPT_MS = 20 * 60 * 1000;
 
 const probeJobs = new Map<string, Promise<Probe | undefined>>();
+/**
+ * The languages of a Matroska file's full text subtitles from its first part alone (one read of
+ * 512 KB, see mkv.ts), per file: known seconds before ffprobe's header read is done, so a first
+ * play's list can already leave out the languages the file has (see embeddedLanguages).
+ */
+const headerLanguageJobs = new Map<string, Promise<string[] | undefined>>();
+
+/** Full text subtitle languages among a Matroska file's tracks: not signs, songs or forced lines, as tagged. */
+export function mkvTextLanguages(tracks: MkvTrack[]): string[] {
+  const full = tracks.filter((t) => t.type === "subtitle" && isTextCodec(t.codec) && !t.forced && !/sign|song|forced/i.test(t.name));
+  return [...new Set(full.map((t) => t.language.toLowerCase()).filter((l) => l && l !== "und"))];
+}
 
 /**
  * The playing file's header: duration and its English subtitle track, if any.
@@ -1292,6 +1304,13 @@ function probeFile(aiostreamsUrl: string, videoId: string, type: string, filenam
   if (!job) {
     job = (async () => {
       const url = await resolvePlayback(aiostreamsUrl, videoId, type, filename);
+      if (!headerLanguageJobs.has(filename)) {
+        headerLanguageJobs.set(
+          filename,
+          readMkvTracks(url).then((head) => (head ? mkvTextLanguages(head.tracks) : undefined), () => undefined)
+        );
+        setTimeout(() => headerLanguageJobs.delete(filename), 30 * 60 * 1000).unref();
+      }
       const probed = await probe(url);
       if ((probed.track === undefined && (probed.audio === undefined || !SPEECH_SYNC)) || !probed.duration) {
         const none: FileAnchors = { filename, duration: probed.duration, windows: [], speechChecked: true, subtitleLangs: probed.languages };
@@ -1334,19 +1353,22 @@ export async function fileHasSubtitles(aiostreamsUrl: string, videoId: string, t
 }
 
 /**
- * Languages the playing file already has full text subtitles in, from earlier reads of it or a header
- * read that has finished (fileHasSubtitles starts one on a first play). Undefined when not known yet.
+ * Languages the playing file already has full text subtitles in, from earlier reads of it, a header
+ * read that has finished (fileHasSubtitles starts one on a first play), or the quick read of a
+ * Matroska file's first part, waited on for at most waitMs. Undefined when not known in time.
  */
-export async function embeddedLanguages(filename: string): Promise<string[] | undefined> {
+export async function embeddedLanguages(filename: string, waitMs = 0): Promise<string[] | undefined> {
   try {
     const found = JSON.parse(await readFile(anchorsFile(filename), "utf8")) as FileAnchors;
     if (Array.isArray(found.subtitleLangs)) return found.subtitleLangs;
   } catch {}
   const job = probeJobs.get(filename);
-  if (!job) return undefined;
-  // Only a header read that's already done: never wait here.
-  const probed = await Promise.race([job, Promise.resolve(undefined)]);
-  return probed?.languages;
+  // A header read that's already done.
+  const probed = job ? await Promise.race([job, Promise.resolve(undefined)]) : undefined;
+  if (probed) return probed.languages;
+  const quick = headerLanguageJobs.get(filename);
+  if (!quick) return undefined;
+  return Promise.race([quick, new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), waitMs).unref())]);
 }
 
 /** Index lines are cut into windows this long, end to end: every window of the file is measured. */

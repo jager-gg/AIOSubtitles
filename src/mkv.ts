@@ -291,13 +291,19 @@ async function range(url: string, from: number, length: number, timeoutMs: numbe
   return out;
 }
 
-/**
- * The subtitle tracks' timing of the Matroska file at url, from its header and index, or undefined
- * when the file isn't Matroska, has no index the header points to, or its index has no subtitle lines.
- */
-export async function readMkvTiming(url: string, timeoutMs = 20000): Promise<MkvTiming | undefined> {
+/** What the first part of a file says: its tracks, time scale, length and where its index is. */
+interface Head {
+  /** Where the Segment's data begins in the file: Cue and Seek positions count from there. */
+  segmentStart: number;
+  scaleNs: number;
+  durationTicks: number;
+  tracks: MkvTrack[];
+  cuesAt?: number;
+  bytesRead: number;
+}
+
+async function readHead(url: string, timeoutMs: number): Promise<Head | undefined> {
   const head = await range(url, 0, HEAD_BYTES, timeoutMs);
-  let bytesRead = head.length;
   const top = children(head, 0, head.length);
   if (top[0]?.id !== ID.EBML) return undefined;
   const segment = top.find((e) => e.id === ID.Segment);
@@ -323,19 +329,48 @@ export async function readMkvTiming(url: string, timeoutMs = 20000): Promise<Mkv
     } else if (e.id === ID.Tracks && !e.cut) tracks = parseTracks(head, e);
     else if (e.id === ID.Cluster) break;
   }
-  const subtitles = new Set(tracks.filter((t) => t.type === "subtitle").map((t) => t.number));
-  if (cuesAt === undefined || subtitles.size === 0) return undefined;
+  return { segmentStart: segment.start, scaleNs, durationTicks, tracks, cuesAt, bytesRead: head.length };
+}
 
-  // The index: its own header first (ID and size), then the whole of it.
-  const peek = await range(url, cuesAt, 16, timeoutMs);
-  bytesRead += peek.length;
+/** The index (Cues) the header points to, whole, or undefined when there is none or it's too big. */
+async function readCues(url: string, at: number, timeoutMs: number): Promise<{ cues: Uint8Array; bytesRead: number } | undefined> {
+  // Its own header first (ID and size), then the whole of it.
+  const peek = await range(url, at, 16, timeoutMs);
   const id = vint(peek, 0, true);
   const size = id && vint(peek, id.length, false);
   if (!id || id.value !== ID.Cues || !size || size.unknown || size.value > MAX_CUES_BYTES) return undefined;
-  const cues = await range(url, cuesAt + id.length + size.length, size.value, timeoutMs);
-  bytesRead += cues.length;
+  const cues = await range(url, at + id.length + size.length, size.value, timeoutMs);
   if (cues.length < size.value) return undefined;
-  const lines = parseIndex(cues, scaleNs, subtitles);
-  if (![...lines.values()].some((l) => l.length > 0)) return undefined;
-  return { duration: Math.round((durationTicks * scaleNs) / 1e6), tracks, lines, bytesRead };
+  return { cues, bytesRead: peek.length + cues.length };
 }
+
+const msOf = (head: Head) => Math.round((head.durationTicks * head.scaleNs) / 1e6);
+
+/**
+ * The subtitle tracks' timing of the Matroska file at url, from its header and index, or undefined
+ * when the file isn't Matroska, has no index the header points to, or its index has no subtitle lines.
+ */
+export async function readMkvTiming(url: string, timeoutMs = 20000): Promise<MkvTiming | undefined> {
+  const head = await readHead(url, timeoutMs);
+  if (!head) return undefined;
+  const subtitles = new Set(head.tracks.filter((t) => t.type === "subtitle").map((t) => t.number));
+  if (head.cuesAt === undefined || subtitles.size === 0) return undefined;
+  const index = await readCues(url, head.cuesAt, timeoutMs);
+  if (!index) return undefined;
+  const lines = parseIndex(index.cues, head.scaleNs, subtitles);
+  if (![...lines.values()].some((l) => l.length > 0)) return undefined;
+  return { duration: msOf(head), tracks: head.tracks, lines, bytesRead: head.bytesRead + index.bytesRead };
+}
+
+/** The tracks of the Matroska file at url, from its first part alone (one read), or undefined when it isn't one. */
+export async function readMkvTracks(url: string, timeoutMs = 10000): Promise<{ duration: number; tracks: MkvTrack[] } | undefined> {
+  const head = await readHead(url, timeoutMs);
+  return head && head.tracks.length ? { duration: msOf(head), tracks: head.tracks } : undefined;
+}
+
+// ---------- text codecs ----------
+
+/** Text subtitle codecs (the rest are pictures: PGS, VobSub). */
+const ASS_CODECS = /^S_(TEXT\/)?(ASS|SSA)$/;
+const PLAIN_CODECS = /^S_TEXT\/(UTF8|ASCII|WEBVTT)$/;
+export const isTextCodec = (codec: string): boolean => ASS_CODECS.test(codec) || PLAIN_CODECS.test(codec);

@@ -591,7 +591,7 @@ function addonRoutes(): express.Router {
     // link asks for ours too (keepEmbedded). Dub and CC tracks stay: a file's English is the
     // translation, not what the dub says.
     if (playing && profile.skipEmbedded) {
-      const have = await embeddedLanguages(playing.filename);
+      const have = await embeddedLanguages(playing.filename, Math.max(0, deadline + HEADER_GRACE_MS - Date.now()));
       if (have?.length) {
         const names = new Set(have.map((code) => languageTitle(code).toLowerCase()));
         const before = tracks.length;
