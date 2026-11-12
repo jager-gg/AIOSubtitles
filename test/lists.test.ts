@@ -113,13 +113,13 @@ const stamp = (ms: number) =>
   `${String(Math.floor(ms / 3600000)).padStart(2, "0")}:${String(Math.floor(ms / 60000) % 60).padStart(2, "0")}:${String(Math.floor(ms / 1000) % 60).padStart(2, "0")},${String(ms % 1000).padStart(3, "0")}`;
 const srt = (cues: Cue[]) => cues.map((c, i) => `${i + 1}\n${stamp(c.start)} --> ${stamp(c.end)}\nline ${i + 1}\n`).join("\n");
 
-/** The playing file as if its Matroska index had been read: these lines on its subtitle track. */
-async function fileWithTrack(filename: string, lines: Cue[]) {
+/** The playing file as if its Matroska index had been read: these lines on its subtitle track (and `more` in its record). */
+async function fileWithTrack(filename: string, lines: Cue[], more: Record<string, unknown> = {}) {
   const duration = 20 * 60000;
   const windows = [];
   for (let from = 0; from < duration; from += 60000) windows.push({ from, to: from + 60000, cues: lines.filter((c) => c.start >= from && c.start < from + 60000) });
   await mkdir(path.join(process.cwd(), CACHE, "anchors"), { recursive: true });
-  await writeFile(path.join(process.cwd(), CACHE, "anchors", `${cacheKey({ kind: "file-anchors", filename })}.json`), JSON.stringify({ filename, duration, windows, track: 2, source: "index", rounds: 2, subtitleLangs: [] }));
+  await writeFile(path.join(process.cwd(), CACHE, "anchors", `${cacheKey({ kind: "file-anchors", filename })}.json`), JSON.stringify({ filename, duration, windows, track: 2, source: "index", rounds: 2, subtitleLangs: [], ...more }));
 }
 
 /** The playing file as one with no subtitle track and no audio to hear: nothing syncs to it. */
@@ -272,6 +272,29 @@ describe("the first list on a file timed by its own track", () => {
     const download = await realFetch(answer.subtitles[0].url.replace("https://sync.example", base));
     expect(download.headers.get("cache-control")).toMatch(/immutable/);
     expect(await download.text()).toContain(`00:00:${String(Math.floor(lines[0].start / 1000) % 60).padStart(2, "0")}`);
+  }, 20000);
+});
+
+describe("dub captions on a file whose English audio is still to be heard", () => {
+  it("are listed and sent timed by the track, but not for the player to keep: the next request is timed by the voices", async () => {
+    const lines = dialogue(12);
+    // An upload that follows the track loosely: 1.2 s late at the start, creeping to 0.9 s by the end.
+    // Captions that fit the track exactly, at one shift, would be the file's own and never moved onto
+    // the voices (fitsOwnTrack), so they would need no audio heard.
+    const late = (t: number) => 1200 - Math.round((300 * t) / (20 * 60000));
+    const hits = sites((url) => subsource(url, { english: [sub(9311, "Show S01E05 [Eng Dubbed Version]")] }, { "9311": srt(lines.map((c) => ({ start: c.start + late(c.start), end: c.end + late(c.start) }))) }, 117) ?? cinemeta(url));
+    // Timed from its index, with audio to hear: dub captions synced to it start the read in the background.
+    await fileWithTrack("Show.S01E05.Dub.mkv", lines, { audio: 1 });
+    const answer = await list({ subsource: "sk_dub_voices_key_17", aiostreams: AIO, languages: ["English"], allowMachine: false, hearingImpaired: "include" }, "tt0000717:1:5", playing("Show.S01E05.Dub.mkv"));
+    expect(answer.subtitles.map(refOfTrack)).toEqual(["ss9311"]);
+    const download = await realFetch(answer.subtitles[0].url.replace("https://sync.example", base));
+    expect(download.status).toBe(200);
+    expect(await download.text()).toContain(`00:00:${String(Math.floor(lines[0].start / 1000) % 60).padStart(2, "0")}`);
+    expect(download.headers.get("cache-control")).toBe("no-store");
+    // The read looked the file's stream up in AIOStreams (once): it isn't listed here, so nothing was read.
+    const { settled } = await import("../src/sync.js");
+    await settled();
+    expect(hits.filter((h) => h.includes("/stream/series/")).length).toBeGreaterThanOrEqual(1);
   }, 20000);
 });
 

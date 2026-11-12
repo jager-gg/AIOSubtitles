@@ -26,6 +26,13 @@ function model(): Promise<ort.InferenceSession> {
   return session;
 }
 
+/**
+ * How many frames (32 ms each) are heard before letting waiting requests through: the model runs on
+ * the one thread that also answers lists and downloads, and a 40 s window took about 0.25 s of it in
+ * one go. Every 64 frames (2 s of audio) a request waits a few ms at most.
+ */
+const FRAMES_PER_TURN = 64;
+
 /** The chance of speech in each 32 ms of 16 kHz mono 16-bit audio. */
 export async function speechChances(pcm: Buffer): Promise<Float32Array> {
   const vad = await model();
@@ -37,6 +44,7 @@ export async function speechChances(pcm: Buffer): Promise<Float32Array> {
   const sr = new ort.Tensor("int64", BigInt64Array.from([BigInt(RATE)]), []);
   const input = new Float32Array(CONTEXT + CHUNK);
   for (let f = 0; f < frames; f++) {
+    if (f > 0 && f % FRAMES_PER_TURN === 0) await new Promise<void>((resolve) => setImmediate(resolve));
     // The last CONTEXT samples before this chunk (zeros at the start), then the chunk.
     input.fill(0, 0, CONTEXT);
     const start = f * CHUNK;

@@ -193,17 +193,198 @@ export function lineShifts(captions: Cue[], lines: Cue[], alignment: Alignment):
   return shifts;
 }
 
+/** The captions once per start (layers of one line count once), sorted by start. */
+function oncePerStart(captions: Cue[]): Cue[] {
+  const once: Cue[] = [];
+  for (const caption of [...captions].sort((a, b) => a.start - b.start || b.end - a.end)) {
+    if (once.length === 0 || once[once.length - 1].start !== caption.start) once.push(caption);
+  }
+  return once;
+}
+
 /**
  * The captions' timing by the file's lines, or undefined when they aren't surely the same dialogue.
  * Captions sharing a start (layers of one line) count once.
  */
 export function timingByLines(captions: Cue[], lines: Cue[]): { shifts: Map<number, number>; alignment: Alignment } | undefined {
-  const once: Cue[] = [];
-  for (const caption of [...captions].sort((a, b) => a.start - b.start || b.end - a.end)) {
-    if (once.length === 0 || once[once.length - 1].start !== caption.start) once.push(caption);
-  }
+  const once = oncePerStart(captions);
   const sorted = [...lines].sort((a, b) => a.start - b.start);
   const alignment = withoutStrays(alignLines(once, sorted), once, sorted);
   if (!sameDialogue(alignment, once, sorted)) return undefined;
   return { shifts: lineShifts(once, sorted, alignment), alignment };
 }
+
+// ---------- line by line over a shift ----------
+
+/**
+ * A shift per stretch can be trusted and still leave lines off: a subtitle that runs a touch slow
+ * creeps up to half a second a minute between its cuts, one timed by hand to a close recording
+ * wanders a second either way, and a translator's own timing puts a line here or there half a
+ * second off, past what snapping moves (0.3 s). Where the file's every line is known, the pairing
+ * by rhythm (alignLines) says where each line belongs. It was made for subtitles no shift fits, and
+ * is accepted alone only when it is beyond doubt (sameDialogue), which translations rarely are: their
+ * lines are split and timed their own way (over the stored plays, 51 of 65 index translations that a
+ * shift fits failed it, most on line lengths). Here a second method already vouches for the subtitle,
+ * so each pair is judged on its own, by whether the two agree around it.
+ *
+ * Each pair has a residual: how far its file line starts from where the shift puts the caption. A
+ * caption moves onto its line when its pair agrees with the pairs around it (AROUND on either side):
+ * - its own residual is within OWN_MS of their median;
+ * - at least SUPPORT of them are within OWN_MS of that median too, so it isn't a stretch of chance
+ *   pairs (where the pairing went wrong, residuals scatter);
+ * - that median is within DRIFT_MS of the correction already confirmed around it (none, at first),
+ *   so the pairing can't pull a stretch of lines far from the shift on its own.
+ * The second pass measures the median against the corrections confirmed in the first, so a real
+ * drift is followed outward step by step, while a short run of pairs one line off (a line missing
+ * from the file's track: the next caption takes the next line, and so on) is still held back by the
+ * pairs at the shift on both sides of it.
+ *
+ * Over the stored plays (63 index translations a shift fits), after the shift fitted by line starts
+ * (followShifts in sync.ts), lines within 0.3 s of the file's own went from 85% to 87.5%. That is
+ * measured against the lines they are moved onto, so it was checked on lines the sync didn't see:
+ * with one line in five of the file's tracks hidden (score --holdout 5), the hidden lines met within
+ * 0.3 s went from 64.9% to 64.8%. A line can't be moved onto a line the sync doesn't see, so that
+ * check can only show harm, and shows next to none. Where every line's place is known (the
+ * benchmark), a translation timed by someone else went from 94% to 99% within 0.3 s.
+ */
+export function linesOverShift(captions: Cue[], lines: Cue[], shift: (start: number) => number): { moves: Map<number, number>; alignment: Alignment } | undefined {
+  const once = oncePerStart(captions);
+  const sorted = [...lines].sort((a, b) => a.start - b.start);
+  if (once.length < MIN_LINES || sorted.length < MIN_LINES) return undefined;
+  const alignment = withoutStrays(alignLines(once, sorted), once, sorted);
+  const pairs = alignment.pairs;
+  if (pairs.length < 2 * AROUND + 1) return undefined;
+  const at = pairs.map(([i]) => once[i].start);
+  const residual = pairs.map(([i, j]) => sorted[j].start - (once[i].start + shift(once[i].start)));
+  const around = (k: number) => residual.slice(Math.max(0, k - AROUND), k + AROUND + 1);
+  const local = pairs.map((_, k) => {
+    const near = around(k).sort((a, b) => a - b);
+    return near[near.length >> 1];
+  });
+  const support = pairs.map((_, k) => {
+    const near = around(k);
+    return near.filter((r) => Math.abs(r - local[k]) <= OWN_MS).length / near.length;
+  });
+  let expected = pairs.map(() => 0);
+  let agrees = pairs.map(() => false);
+  for (let pass = 0; pass < PASSES; pass++) {
+    agrees = pairs.map((_, k) => Math.abs(residual[k] - local[k]) <= OWN_MS && support[k] >= SUPPORT && Math.abs(local[k] - expected[k]) <= DRIFT_MS);
+    const confirmed = pairs.flatMap((_, k) => (agrees[k] ? [{ at: at[k], value: local[k] }] : []));
+    expected = at.map((t) => between(confirmed, t));
+  }
+  const moves = new Map<number, number>();
+  pairs.forEach(([i, j], k) => {
+    if (agrees[k]) moves.set(once[i].start, sorted[j].start - once[i].start);
+  });
+  return { moves, alignment };
+}
+
+/** Pairs on either side of a pair that judge it. */
+const AROUND = 7;
+/** How far a pair's residual may sit from the residual around it: a translator's line half a second off moves. */
+const OWN_MS = 500;
+/** How far the residual around a pair may sit from the correction confirmed around it. */
+const DRIFT_MS = 1000;
+/** Share of the pairs around a pair that must agree with the residual there. */
+const SUPPORT = 0.5;
+const PASSES = 2;
+
+/** A value at t, by straight lines between known points sorted by `at` (the nearest one beyond them; 0 with none). */
+function between(points: Array<{ at: number; value: number }>, t: number): number {
+  let lo = 0;
+  let hi = points.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (points[mid].at < t) lo = mid + 1;
+    else hi = mid;
+  }
+  const before = points[lo - 1];
+  const after = points[lo];
+  if (before && after) return before.value + ((after.value - before.value) * (t - before.at)) / Math.max(1, after.at - before.at);
+  return (before ?? after)?.value ?? 0;
+}
+
+// ---------- per-line timing, kept in order ----------
+
+/**
+ * Per-line shifts that keep the lines in order and apart: lines that move one by one must not pass
+ * each other, crowd each other or come to overlap where they didn't before they moved (`before`:
+ * the timing without the per-line moves, the shift per stretch with snapping, or the lines as
+ * written). Each line keeps to the line before it at least the least of MIN_GAP_MS, the gap as
+ * written and the gap before the moves. `fixed` are the caption starts that sit on their file line;
+ * the others may be moved for this, the way a line left out moves with its neighbours: a line that
+ * comes too near the line ahead of it (or passes it) takes that line's shift, one too near the line
+ * behind it, that line's. Between two fixed lines, where that still isn't enough, the stretch
+ * between them is put in proportion (as lineShifts does). Lines already out of order before the
+ * moves (a shift that steps back by more than the pause it is placed in) are left as they were:
+ * that is the shift's doing, not this.
+ *
+ * The result gives each caption start its shift, and each caption its end: it overlaps a line that
+ * starts while it is on by no more than it did before the moves (lines written overlapping keep
+ * that overlap, others none).
+ */
+export function keptInOrder(
+  captions: Cue[],
+  shift: (start: number) => number,
+  fixed: Set<number>,
+  before: (start: number) => number
+): { shift: (start: number) => number; end: (start: number, end: number) => number } {
+  const starts = [...new Set(captions.map((c) => c.start))].sort((a, b) => a - b);
+  const d = starts.map((s) => shift(s));
+  const was = starts.map((s) => s + before(s));
+  const placed = (k: number) => starts[k] + d[k];
+  // The gap line k keeps to line k - 1; none for lines already out of order before the moves.
+  const gap = starts.map((s, k) => (k === 0 || was[k] < was[k - 1] ? -Infinity : Math.min(MIN_GAP_MS, was[k] - was[k - 1], s - starts[k - 1])));
+  const fine = (k: number) => placed(k) - placed(k - 1) >= gap[k];
+  // Lines `from` to `to`, walked one way (step 1 or -1): each too near the line it came from takes its shift.
+  const follow = (from: number, to: number, step: 1 | -1) => {
+    for (let k = from; (to - k) * step >= 0; k += step) if (!fine(step === 1 ? k : k + 1)) d[k] = d[k - step];
+  };
+  const apart = (from: number, to: number) => {
+    for (let k = from + 1; k <= to; k++) if (!fine(k)) return false;
+    return true;
+  };
+  const anchors = starts.flatMap((s, k) => (fixed.has(s) ? [k] : []));
+  if (anchors.length) {
+    follow(anchors[0] - 1, 0, -1);
+    follow(anchors[anchors.length - 1] + 1, starts.length - 1, 1);
+    for (let n = 0; n + 1 < anchors.length; n++) {
+      const a = anchors[n];
+      const b = anchors[n + 1];
+      if (b - a < 2 || apart(a, b)) continue;
+      follow(a + 1, b - 1, 1);
+      if (apart(a, b)) continue;
+      follow(b - 1, a + 1, -1);
+      if (apart(a, b)) continue;
+      for (let k = a + 1; k < b; k++) d[k] = Math.round(d[a] + ((d[b] - d[a]) * (starts[k] - starts[a])) / Math.max(1, starts[b] - starts[a]));
+    }
+  }
+  const index = new Map(starts.map((s, k) => [s, k]));
+  const shiftOf = (start: number) => {
+    const k = index.get(start);
+    return k === undefined ? shift(start) : d[k];
+  };
+  // The lines by where they now start, to find those that start while a line is on.
+  const byPlace = starts.map((_, k) => k).sort((x, y) => placed(x) - placed(y));
+  const end = (start: number, written: number) => {
+    const own = start + shiftOf(start);
+    const wasEnd = written + before(start);
+    let out = written + shiftOf(start);
+    let lo = 0;
+    let hi = byPlace.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (placed(byPlace[mid]) < own) lo = mid + 1;
+      else hi = mid;
+    }
+    for (let q = lo; q < byPlace.length && placed(byPlace[q]) < out; q++) {
+      const k = byPlace[q];
+      if (starts[k] !== start) out = Math.min(out, placed(k) + Math.max(0, wasEnd - was[k]));
+    }
+    return Math.max(out, own);
+  };
+  return { shift: shiftOf, end };
+}
+
+/** The least gap a line keeps to the line before it, unless it was nearer as written or before the moves. */
+const MIN_GAP_MS = 500;

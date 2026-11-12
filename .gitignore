@@ -2,6 +2,8 @@ node_modules/
 dist/
 .env
 .cache/
+# Caches the tests and the benchmark make for themselves (.cache-bench, .cache-voices-test, ...)
+.cache-*
 *.log
 
 # Logo drafts

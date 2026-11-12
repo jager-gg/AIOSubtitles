@@ -10,7 +10,8 @@
     "build": "tsc -p tsconfig.build.json",
     "test": "vitest run test",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "replay": "tsx scripts/replay.ts"
+    "replay": "tsx scripts/replay.ts",
+    "bench": "tsx scripts/bench.ts"
   },
   "keywords": [
     "stremio",

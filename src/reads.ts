@@ -61,6 +61,18 @@ export function checkReads(url?: string, now = Date.now()): void {
   }
 }
 
+/**
+ * Whether a read nobody waits for (the English audio heard in the background for dub captions, see
+ * sync.ts) of about `bytes` still fits in today's limit with BACKGROUND_SHARE of it at most: the rest
+ * is kept for syncs a viewer is waiting on. Always true when there is no limit.
+ */
+export function backgroundReadFits(bytes: number): boolean {
+  const limit = config.dailyReadBytes;
+  return limit <= 0 || countedToday(READ_COUNTER) + bytes <= limit * BACKGROUND_SHARE;
+}
+
+const BACKGROUND_SHARE = 0.8;
+
 /** Bytes read from a playing file (measured, or estimated for ffmpeg's windows). */
 export function noteRead(bytes: number): void {
   count(READ_COUNTER, Math.round(bytes));

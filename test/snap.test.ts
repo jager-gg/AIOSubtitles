@@ -37,4 +37,17 @@ describe("snapping lines onto the file's own line starts", () => {
     const srt = "1\n00:00:10,000 --> 00:00:12,000\nhi\n";
     expect(retime(srt, ".srt", (start) => 1000 + (nudges.get(start) ?? 0))).toBe("1\n00:00:11,200 --> 00:00:13,200\nhi\n");
   });
+
+  it("writes the end it is given, when lines are kept apart one by one", () => {
+    // Given the line's start and end as written (after any frame rate), the end function decides where it ends.
+    const ends: Array<[number, number]> = [];
+    const end = (start: number, last: number) => (ends.push([start, last]), last + 500);
+    const srt = "1\n00:00:10,000 --> 00:00:12,000\nhi\n";
+    expect(retime(srt, ".srt", () => 1000, 1, end)).toBe("1\n00:00:11,000 --> 00:00:12,500\nhi\n");
+    const ass = "Dialogue: 0,0:00:10.00,0:00:12.00,Default,,0,0,0,,Hi\n";
+    expect(retime(ass, ".ass", () => 1000, 1, end)).toBe("Dialogue: 0,0:00:11.00,0:00:12.50,Default,,0,0,0,,Hi\n");
+    expect(ends).toEqual([[10_000, 12_000], [10_000, 12_000]]);
+    // Made for another frame rate: start and end are scaled first.
+    expect(retime(srt, ".srt", () => 0, 2, (_start, last) => last)).toBe("1\n00:00:20,000 --> 00:00:24,000\nhi\n");
+  });
 });

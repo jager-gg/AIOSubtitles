@@ -179,6 +179,16 @@ function param(value: string | string[] | undefined): string {
   return (Array.isArray(value) ? value[0] : value) ?? "";
 }
 
+/** A sync's timing in a few words, for the download log: the method, the median shift, and the move onto the voices. */
+function describeTiming(synced: SyncResult): string {
+  if (synced.noFit) return "another file's";
+  if (synced.anchors.length === 0) return "no timing found";
+  const offsets = synced.anchors.map((a) => a.offset).sort((a, b) => a - b);
+  const method = synced.byLines ? "line by line" : synced.bySpeech ? "by speech" : synced.byStarts ? "by line starts" : synced.factor ? `rate x${synced.factor.toFixed(4)}` : "shift";
+  const voices = synced.voiceShift !== undefined ? `, voices ${synced.voiceShift >= 0 ? "+" : ""}${synced.voiceShift} ms` : synced.voicesPending ? ", voices pending" : "";
+  return `${method} ${offsets[offsets.length >> 1] >= 0 ? "+" : ""}${offsets[offsets.length >> 1]} ms${voices}`;
+}
+
 function keysOf(profile: Profile): SourceKeys {
   return { subsource: profile.subsourceKey || undefined, subdl: profile.subdlKey };
 }
@@ -919,6 +929,8 @@ function addonRoutes(): express.Router {
       }
       let served = subtitle.file;
       let outcome = "sent as it came";
+      /** How the sent file was timed, for the log: the shift onto the file and the move onto the voices. */
+      let timing = "";
 
       const vid = typeof req.query.vid === "string" ? req.query.vid : "";
       const type = typeof req.query.type === "string" ? req.query.type : "";
@@ -951,6 +963,11 @@ function addonRoutes(): express.Router {
           } else if (synced) {
             served = synced.file;
             outcome = synced.anchors.length > 0 ? (synced.bySpeech ? "synced (audio)" : "synced") : "couldn't sync";
+            timing = describeTiming(synced);
+            // Dub captions timed by the track while the English audio is heard in the background: the
+            // next request gets them timed by the voices, so a player mustn't keep this answer. The
+            // same for a file with no subtitle track while more of its audio is heard.
+            if (synced.voicesPending || synced.speechPending) final = false;
           }
         }
         // Timed only by speech: an alternate that fits the file's subtitles is sent instead, if one does.
@@ -967,6 +984,7 @@ function addonRoutes(): express.Router {
               if (syncedWell(altSynced)) {
                 served = altSynced.file;
                 outcome = "synced (fallback)";
+                timing = `${altRef}, ${describeTiming(altSynced)}`;
                 count("downloads.fallback");
                 console.log(`download ${ref}: not synced to ${file}; sent fallback ${altRef} instead`);
                 break;
@@ -981,6 +999,10 @@ function addonRoutes(): express.Router {
       const body = Buffer.from(toSrt(decodeSubtitle(await readFile(served), lang), ext), "utf8");
 
       res.locals.activity = { kind: "download", what, result: outcome };
+      // One line per download: which subtitle went to which file, and how it was timed.
+      console.log(
+        `[${profile.name}] download ${ref}${season !== undefined ? ` S${season}E${episode ?? "?"}` : ""} ${lang0 ?? "English Dub"}${file ? ` file=${file}` : ""}: ${outcome}${timing ? ` (${timing})` : ""}${final ? "" : ", not kept"} in ${Date.now() - (deadline - DOWNLOAD_BUDGET_MS)} ms`
+      );
       // Kept for good only when it's synced (or sync isn't asked for): a subtitle left unsynced may sync
       // later (a fallback, better rules), and a player keeping this answer would never ask again.
       const syncAsked = Boolean(profile.aiostreamsUrl && vid && type && file);
